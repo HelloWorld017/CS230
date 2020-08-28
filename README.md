@@ -6,7 +6,7 @@ This first lab assignment is for aimed to give you a heads up on the low‑level
 
 ## Fork & Clone instructions
 
-**First make sure you fork the CS230/lab1 repository to your private namespace!** If you don't you won't be able to submit your work. Go to [https://cs230.kaist.ac.kr/cs230/lab1](https://cs230.kaist.ac.kr/cs230/lab1) and fork to your private repo.
+**First make sure you fork the CS230/lab1 repository to your private namespace!** If you don't you won't be able to submit your work. Go to [httpss://cs230.kaist.ac.kr/cs230/lab1](https://cs230.kaist.ac.kr/cs230/lab1) and fork to your private repo.
 
 Once you have your private repo, you may clone your private repo. Also, **make sure you have added your SSH key to the GitLab Web UI** (refer to the KLMS announcement).
 
@@ -79,7 +79,7 @@ This step will push your local commits onto your GitLab remote repository. Make 
 $ git remote -v
 ```
 
-Check the tags section in the GitLab Web interface to see if your latest code has been pushed onto the server. The URL to check your tags is [http://cs230.kaist.ac.kr/cs[your_student_id]/lab1/tags](). 
+Check the tags section in the GitLab Web interface to see if your latest code has been pushed onto the server. The URL to check your tags is [https://cs230.kaist.ac.kr/cs[your_student_id]/lab1/tags](). 
 
 ## 6. Grading
 
