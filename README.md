@@ -1,6 +1,6 @@
 # Lab 1: Linked list in C Programming
 
-## Due: Thursday, Sept 19, 23:59
+## Due: Tuesday, Sept 15, 23:59
 
 This first lab assignment is for aimed to give you a heads up on the low‑level semantics of the C programming language that you will be using throughout this course.
 
