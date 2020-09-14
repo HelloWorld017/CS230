@@ -1,0 +1,6 @@
+# Artifacts
+*.o
+
+# IDE Settings
+.idea/
+
