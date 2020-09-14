@@ -1,5 +1,6 @@
 # Artifacts
 *.o
+test
 
 # IDE Settings
 .idea/
