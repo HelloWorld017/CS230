@@ -8,10 +8,9 @@
 	struct list_node* tail = head->prev; \
 	for (; item != tail; item = item->next)
 
-#define LINKEDLIST_LINK(prev_node, next_node) ({ \
+#define LINKEDLIST_LINK(prev_node, next_node) \
     prev_node->next = next_node; \
-    next_node->prev = prev_node; \
-})
+    next_node->prev = prev_node;
 
 /*	
 Allocate a linked list node with a given key
@@ -20,7 +19,7 @@ initialize the pointers to NULL,
 set the key value to the key provided by the argument
  */
 struct list_node *allocate_node_with_key(int key) {
-	struct list_node* newNode = malloc(sizeof(struct list_node));
+	struct list_node* newNode = (struct list_node*) malloc(sizeof(struct list_node));
 	newNode->next = NULL;
 	newNode->prev = NULL;
 	newNode->value = NULL;
