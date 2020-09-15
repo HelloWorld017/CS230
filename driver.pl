@@ -389,7 +389,7 @@ if ($nickname) {
     # Post the autoresult to the server. The Linux login id is
     # concatenated with the user-supplied nickname for some (very) loose
     # authentication of submissions.
-    &Driverlib::driver_post("bdh0404:$nickname", $autoresult, $autograded);
+    &Driverlib::driver_post("$login:$nickname", $autoresult, $autograded);
 }
 
 # Clean up and exit
