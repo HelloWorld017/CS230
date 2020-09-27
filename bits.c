@@ -212,7 +212,30 @@ int rotateLeft(int x, int n) {
  *   Rating: 4
  */
 int leftBitCount(int x) {
-  return 2;
+    unsigned x_ = ~x;
+
+    int i1 = !(x_ >> 16) << 4;
+    x_ <<= i1;
+    int n = i1;
+
+    int i2 = !(x_ >> 24) << 3;
+    x_ <<= i2;
+    n += i2;
+
+    int i3 = !(x_ >> 28) << 2;
+    x_ <<= i3;
+    n += i3;
+
+    int i4 = !(x_ >> 30) << 1;
+    x_ <<= i4;
+    n += i4;
+
+    int i5 = !(x_ >> 31);
+    n += i5;
+
+    // Add one if x is 0xFFFFFFFF
+    n += !(x_);
+    return n;
 }
 /* 
  * absVal - absolute value of x
