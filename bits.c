@@ -1,7 +1,7 @@
 /* 
  * CS:APP Data Lab 
  * 
- * <Please put your name and userid here>
+ * 20190146 KimYohan
  * 
  * bits.c - Source file with your solutions to the Lab.
  *          This is the file you will hand in to your instructor.
@@ -175,7 +175,7 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  return 2;
+  return ~(~x & ~y) & ~(x & y);
 }
 /* 
  * byteSwap - swaps the nth byte and the mth byte
@@ -186,8 +186,11 @@ int bitXor(int x, int y) {
  *  Max ops: 25
  *  Rating: 2
  */
+
 int byteSwap(int x, int n, int m) {
-    return 2;
+    return (x & ~((0xFF << (n << 3)) | (0xFF << (m << 3))))
+        | (((x >> (n << 3)) & 0xFF) << (m << 3))
+        | (((x >> (m << 3)) & 0xFF) << (n << 3));
 }
 /* 
  * rotateLeft - Rotate x to the left by n
@@ -198,7 +201,7 @@ int byteSwap(int x, int n, int m) {
  *   Rating: 3 
  */
 int rotateLeft(int x, int n) {
-  return 2;
+    return (x << n) | (((1 << n) + ~1 + 1) & (x >> (~n + 33)));
 }
 /*
  * leftBitCount - returns count of number of consective 1's in
