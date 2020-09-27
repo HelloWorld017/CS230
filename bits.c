@@ -188,9 +188,12 @@ int bitXor(int x, int y) {
  */
 
 int byteSwap(int x, int n, int m) {
-    return (x & ~((0xFF << (n << 3)) | (0xFF << (m << 3))))
-        | (((x >> (n << 3)) & 0xFF) << (m << 3))
-        | (((x >> (m << 3)) & 0xFF) << (n << 3));
+    n = n << 3;
+    m = m << 3;
+    
+    return (x & ~((0xFF << n) | (0xFF << m)))
+        | (((x >> n) & 0xFF) << m)
+        | (((x >> m) & 0xFF) << n);
 }
 /* 
  * rotateLeft - Rotate x to the left by n
