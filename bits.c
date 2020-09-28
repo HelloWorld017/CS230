@@ -432,5 +432,24 @@ int float_f2i(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_half(unsigned uf) {
-    return 2;
+    unsigned sig;
+    unsigned exp, man;
+    int round, guard;
+    
+    sig = uf & 0x80000000;
+    exp = (uf & 0x7F800000) >> 23;
+    if (exp == 255) return uf;
+    
+    man = uf & 0x007FFFFF;
+    if (exp > 1) return ((exp - 1) << 23) | man | sig;
+    
+    round = man & 0x01;
+    guard = man & 0x02;
+    man >>= 1;
+    if (guard && round) {
+        man += 1;
+    }
+    
+    if (exp == 0) return man | sig;
+    return ((exp - 1) << 23) | man | sig | 0x00400000;
 }
