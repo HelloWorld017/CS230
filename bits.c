@@ -393,7 +393,7 @@ int howManyBits(int x) {
  *   Rating: 2
  */
 unsigned float_abs(unsigned uf) {
-  return 2;
+	return (((uf & 0x7F800000) == 0x7F800000) && ((uf & 0x7FFFFFFF) != 0x7F800000)) ? uf : uf & ~(1 << 31);
 }
 /* 
  * float_f2i - Return bit-level equivalent of expression (int) f
@@ -408,7 +408,14 @@ unsigned float_abs(unsigned uf) {
  *   Rating: 4
  */
 int float_f2i(unsigned uf) {
-  return 2;
+	int sig = (uf & 0x80000000) ? -1 : 1;
+	unsigned exp = (uf & 0x7F800000) >> 23;
+	if (exp > 159) return 0x80000000u;
+	
+	unsigned man = (uf & 0x007FF000) | 0x00800000;
+	if (exp > 150) return (man << (exp - 150)) * sig;
+	if (exp >= 127) return (man >> (150 - exp)) * sig;
+	return 0;
 }
 /* 
  * float_half - Return bit-level equivalent of expression 0.5*f for
