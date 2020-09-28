@@ -175,7 +175,7 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
-  return ~(~x & ~y) & ~(x & y);
+    return ~(~x & ~y) & ~(x & y);
 }
 /* 
  * byteSwap - swaps the nth byte and the mth byte
@@ -260,7 +260,7 @@ int absVal(int x) {
  *   Rating: 1
  */
 int tmax(void) {
-  return ~(1 << 31);
+    return ~(1 << 31);
 }
 /* 
  * fitsShort - return 1 if x can be represented as a 
@@ -317,29 +317,29 @@ int isNonNegative(int x) {
  *   Rating: 3
  */
 int isGreater(int x, int y) {
-	int m;
-	int x_sign, m_sign;
-	int sign_same;
-	
-	m = y + ~x + 1;
-	x_sign = x >> 31;
-	m_sign = m >> 31;
-	sign_same = !(x_sign ^ y >> 31);
+    int m;
+    int x_sign, m_sign;
+    int sign_same;
 
-	return
-		(
-			sign_same |  
-			!(x_sign & m_sign)
-			// if y - x overflows then 0
-		) &
-		(
-			(
-				(!sign_same) &
-				(!x_sign & !m_sign)
-				//if y - x underflows then 1
-			) |
-			(m_sign & 0x01)
-		);
+    m = y + ~x + 1;
+    x_sign = x >> 31;
+    m_sign = m >> 31;
+    sign_same = !(x_sign ^ y >> 31);
+
+    return
+        (
+            sign_same |
+            !(x_sign & m_sign)
+            // if y - x overflows then 0
+        ) &
+        (
+            (
+                (!sign_same) &
+                (!x_sign & !m_sign)
+                //if y - x underflows then 1
+            ) |
+            (m_sign & 0x01)
+        );
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -354,32 +354,32 @@ int isGreater(int x, int y) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-	int i1, i2, i3, i4, i5, n;
-	x ^= (x >> 31);
+    int i1, i2, i3, i4, i5, n;
+    x ^= (x >> 31);
 
-	i1 = !(x >> 16) << 4;
-	x <<= i1;
-	n = i1;
+    i1 = !(x >> 16) << 4;
+    x <<= i1;
+    n = i1;
 
-	i2 = !(x >> 24) << 3;
-	x <<= i2;
-	n += i2;
+    i2 = !(x >> 24) << 3;
+    x <<= i2;
+    n += i2;
 
-	i3 = !(x >> 28) << 2;
-	x <<= i3;
-	n += i3;
+    i3 = !(x >> 28) << 2;
+    x <<= i3;
+    n += i3;
 
-	i4 = !(x >> 30) << 1;
-	x <<= i4;
-	n += i4;
+    i4 = !(x >> 30) << 1;
+    x <<= i4;
+    n += i4;
 
-	i5 = !(x >> 31);
-	n += i5;
+    i5 = !(x >> 31);
+    n += i5;
 
-	// Add one if x is 0x00000000
-	n += !(x);
+    // Add one if x is 0x00000000
+    n += !(x);
 
-	return 34 + ~n;
+    return 34 + ~n;
 }
 /* 
  * float_abs - Return bit-level equivalent of absolute value of f for
@@ -393,7 +393,7 @@ int howManyBits(int x) {
  *   Rating: 2
  */
 unsigned float_abs(unsigned uf) {
-	return (((uf & 0x7F800000) == 0x7F800000) && ((uf & 0x7FFFFFFF) != 0x7F800000)) ? uf : uf & ~(1 << 31);
+    return (((uf & 0x7F800000) == 0x7F800000) && ((uf & 0x7FFFFFFF) != 0x7F800000)) ? uf : uf & ~(1 << 31);
 }
 /* 
  * float_f2i - Return bit-level equivalent of expression (int) f
@@ -408,17 +408,17 @@ unsigned float_abs(unsigned uf) {
  *   Rating: 4
  */
 int float_f2i(unsigned uf) {
-	int sig;
-	unsigned exp, man;
+    int sig;
+    unsigned exp, man;
 
-	sig = (uf & 0x80000000) ? -1 : 1;
-	exp = (uf & 0x7F800000) >> 23;
-	if (exp > 159) return 0x80000000u;
-	
-	man = (uf & 0x007FF000) | 0x00800000;
-	if (exp > 150) return (man << (exp - 150)) * sig;
-	if (exp >= 127) return (man >> (150 - exp)) * sig;
-	return 0;
+    sig = (uf & 0x80000000) ? -1 : 1;
+    exp = (uf & 0x7F800000) >> 23;
+    if (exp > 159) return 0x80000000u;
+
+    man = (uf & 0x007FF000) | 0x00800000;
+    if (exp > 150) return (man << (exp - 150)) * sig;
+    if (exp >= 127) return (man >> (150 - exp)) * sig;
+    return 0;
 }
 /* 
  * float_half - Return bit-level equivalent of expression 0.5*f for
@@ -432,5 +432,5 @@ int float_f2i(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_half(unsigned uf) {
-  return 2;
+    return 2;
 }
