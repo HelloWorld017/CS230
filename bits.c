@@ -318,14 +318,14 @@ int isNonNegative(int x) {
  */
 int isGreater(int x, int y) {
 	int m;
-	int x_sign, y_sign, m_sign;
+	int x_sign, m_sign;
 	int sign_same;
 	
 	m = y + ~x + 1;
 	x_sign = x >> 31;
 	m_sign = m >> 31;
-	sign_same = !(x_sign ^ y_sign);
-	
+	sign_same = !(x_sign ^ y >> 31);
+
 	return
 		(
 			sign_same |  
@@ -334,7 +334,7 @@ int isGreater(int x, int y) {
 		) &
 		(
 			(
-				!sign_same &
+				(!sign_same) &
 				(!x_sign & !m_sign)
 				//if y - x underflows then 1
 			) |
