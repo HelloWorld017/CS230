@@ -317,7 +317,29 @@ int isNonNegative(int x) {
  *   Rating: 3
  */
 int isGreater(int x, int y) {
-  return 2;
+	int m;
+	int x_sign, y_sign, m_sign;
+	int sign_same;
+	
+	m = y + ~x + 1;
+	x_sign = x >> 31;
+	m_sign = m >> 31;
+	sign_same = !(x_sign ^ y_sign);
+	
+	return
+		(
+			sign_same |  
+			!(x_sign & m_sign)
+			// if y - x overflows then 0
+		) &
+		(
+			(
+				!sign_same &
+				(!x_sign & !m_sign)
+				//if y - x underflows then 1
+			) |
+			(m_sign & 0x01)
+		);
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -332,7 +354,7 @@ int isGreater(int x, int y) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  return 0;
+	return 2;
 }
 /* 
  * float_abs - Return bit-level equivalent of absolute value of f for
