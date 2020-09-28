@@ -354,7 +354,32 @@ int isGreater(int x, int y) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-	return 2;
+	int i1, i2, i3, i4, i5, n;
+	x ^= (x >> 31);
+
+	i1 = !(x >> 16) << 4;
+	x <<= i1;
+	n = i1;
+
+	i2 = !(x >> 24) << 3;
+	x <<= i2;
+	n += i2;
+
+	i3 = !(x >> 28) << 2;
+	x <<= i3;
+	n += i3;
+
+	i4 = !(x >> 30) << 1;
+	x <<= i4;
+	n += i4;
+
+	i5 = !(x >> 31);
+	n += i5;
+
+	// Add one if x is 0x00000000
+	n += !(x);
+
+	return 34 + ~n;
 }
 /* 
  * float_abs - Return bit-level equivalent of absolute value of f for
