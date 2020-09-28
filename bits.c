@@ -408,11 +408,14 @@ unsigned float_abs(unsigned uf) {
  *   Rating: 4
  */
 int float_f2i(unsigned uf) {
-	int sig = (uf & 0x80000000) ? -1 : 1;
-	unsigned exp = (uf & 0x7F800000) >> 23;
+	int sig;
+	unsigned exp, man;
+
+	sig = (uf & 0x80000000) ? -1 : 1;
+	exp = (uf & 0x7F800000) >> 23;
 	if (exp > 159) return 0x80000000u;
 	
-	unsigned man = (uf & 0x007FF000) | 0x00800000;
+	man = (uf & 0x007FF000) | 0x00800000;
 	if (exp > 150) return (man << (exp - 150)) * sig;
 	if (exp >= 127) return (man >> (150 - exp)) * sig;
 	return 0;
