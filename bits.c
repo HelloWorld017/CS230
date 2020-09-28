@@ -250,7 +250,8 @@ int leftBitCount(int x) {
  *   Rating: 4
  */
 int absVal(int x) {
-  return 2;
+    int i = x >> 31;
+    return (x ^ i) + (i & 0x01);
 }
 /* 
  * TMax - return maximum two's complement integer 
@@ -259,7 +260,7 @@ int absVal(int x) {
  *   Rating: 1
  */
 int tmax(void) {
-  return 2;
+  return ~(1 << 31);
 }
 /* 
  * fitsShort - return 1 if x can be represented as a 
@@ -270,7 +271,7 @@ int tmax(void) {
  *   Rating: 1
  */
 int fitsShort(int x) {
-  return 2;
+    return !((x ^ (x >> 31)) & (1 << 31 >> 16));
 }
 /* 
  * rempwr2 - Compute x%(2^n), for 0 <= n <= 30
@@ -281,7 +282,11 @@ int fitsShort(int x) {
  *   Rating: 3
  */
 int rempwr2(int x, int n) {
-    return 2;
+    int base = 1 << n;
+    int modulo = x & (base + ~0);
+    int condition = ((!!modulo & !!(x >> 31)) << 31 >> 31);
+
+    return modulo + (condition & (~base + 1));
 }
 /* 
  * sign - return 1 if positive, 0 if zero, and -1 if negative
@@ -292,7 +297,7 @@ int rempwr2(int x, int n) {
  *  Rating: 2
  */
 int sign(int x) {
-    return 2;
+    return (x >> 31) | !!x;
 }
 /* 
  * isNonNegative - return 1 if x >= 0, return 0 otherwise 
@@ -302,7 +307,7 @@ int sign(int x) {
  *   Rating: 3
  */
 int isNonNegative(int x) {
-  return 2;
+    return !(x >> 31);
 }
 /* 
  * isGreater - if x > y  then return 1, else return 0 
