@@ -275,7 +275,7 @@ First command adds `mm.c` to your next commit. Then, you can commit it by typing
 commit command. Execute following command to make sure that you do not have any 
 uncommitted changes to the `mm.c` file.
 
-    unix> get status
+    unix> git status
 
 To hand in your lab, execute the following command
 
