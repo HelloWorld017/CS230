@@ -163,6 +163,70 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+	char (*argv[MAXARGS])[MAXLINE];
+	int is_background = parseline(cmdline, argv);
+
+	/* Return if no command is given */
+	if (argv[0] == NULL) {
+		return;
+	}
+
+	/* Check for builtin command */
+	int is_builtin = builtin_cmd(argv);
+	if (is_builtin) {
+		return;
+	}
+
+	/* Run for command */
+	// Prevent too many jobs
+	int has_empty_slot = 0;
+
+	for (i = 0; i < MAXJOBS; i++) {
+		if (jobs[i].pid == 0) {
+			has_empty_slot = 1;
+			break;
+		}
+	}
+
+	if (has_empty_slot == 0) {
+		printf("Tried to create too many jobs\n");
+		return;
+	}
+
+	// Forking process
+	pid_t pid;
+	pid = fork();
+
+	if (pid < 0) {
+		// When fork failed
+		unix_error("fork error");
+	} else if (pid == 0) {
+		// Child
+
+		// Set process group to itself
+		if (setpgid(0, 0) < 0)
+			unix_error("setpgid error");
+
+		// Execute program
+		if (execve(argv[0], argv, environ) < 0) {
+			// Die if there's no such command
+			printf("%s: Command not found.\n", argv[0]);
+			exit(1);
+		}
+	} else {
+		// Parent
+
+		// Add child job to the job list
+		// (This will not fail I think, as we have already checked for failures)
+		if (is_background) {
+			addjob(jobs, pid, BG, cmdline);
+		} else {
+			addjob(jobs, pid, FG, cmdline);
+
+			// Wait if it is FG task
+			waitfg(pid);
+		}
+	}
     return;
 }
 
@@ -229,7 +293,34 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    return 0;     /* not a builtin command */
+	// Handle quit command
+	if (strcmp(argv[0], "quit")) {
+		exit(0);
+
+		// This is NOT reachable
+		return 1;
+	}
+
+	// Handle fg command
+	if (strcmp(argv[0], "fg")) {
+		do_bgfg(argv);
+		return 1;
+	}
+
+	// Handle bg command
+	if (strcmp(argv[0], "bg")) {
+		do_bgfg(argv);
+		return 1;
+	}
+
+	// Handle jobs command
+	if (strcmp(argv[0], "jobs")) {
+		listjobs(jobs);
+		return 1;
+	}
+
+	// Not a built-in command
+    return 0;
 }
 
 /* 
@@ -237,6 +328,14 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+	if (argv[1] == NULL) {
+
+		return;
+	}
+
+	if (strcmp(argv[0], "fg")) {
+
+	}
     return;
 }
 
@@ -245,12 +344,38 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    return;
+	struct job_t *job = getjobpid(jobs, pid);
+
+	// If no such job, return
+	if (job == NULL) {
+		return;
+	}
+
+	// Wait until job is no longer on foreground
+	while (job->state != FG) ;
 }
 
 /*****************
  * Signal handlers
  *****************/
+
+// Just a simple implementation of Spinlock
+volatile int sigchld_mutex = 0;
+void acquire_sigchld_mutex() {
+	while (__sync_bool_compare_and_swap(*sigchld_mutex, 0, 1) == 0) ;
+
+	// Make it not reordered with statements below the lock acquire
+	// The reordering will not occur in volatile I think,
+	//   but as I couldn't confirm, I have just added this.
+	__sync_synchronize();
+}
+
+void release_sigchld_mutex() {
+	// Make it not reordered with statements above the lock release
+	__sync_synchronize();
+
+	sigchld_mutex = 1;
+}
 
 /* 
  * sigchld_handler - The kernel sends a SIGCHLD to the shell whenever
@@ -261,7 +386,9 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
-    return;
+	acquire_sigchld_mutex();
+
+    release_sigchld_mutex();
 }
 
 /* 
