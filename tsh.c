@@ -241,15 +241,17 @@ void eval(char *cmdline)
 		}
 
 		release_jobs_mutex();
+
+		// Resume signals
 		sigprocmask(SIG_SETMASK, &mask_prev, NULL);
 
 		if (is_background) {
-			// Print template if it is BG task
+			// Print template if it is a BG task
 			acquire_jobs_mutex();
 			printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
 			release_jobs_mutex();
 		} else {
-			// Wait if it is FG task
+			// Wait if it is a FG task
 			waitfg(pid);
 		}
 	}
@@ -372,11 +374,14 @@ void do_bgfg(char **argv)
 	if (*buf == '%') {
 		// When it is JID
 		mode = 0;
+
+		// Advance buffer offset
 		buf++;
 	}
 
 	// Read a number from buffer
 	while (*buf) {
+		// 0x30: zero, 0x39: nine
 		if ((0x30 > *buf) || (0x39 < *buf)) {
 			printf("%s: argument must be a PID or %%jobid\n", argv[0]);
 			return;
@@ -437,6 +442,7 @@ void do_bgfg(char **argv)
 			unix_error("kill error");
 		}
 
+		// Resume signals
 		sigprocmask(SIG_SETMASK, &mask_prev, NULL);
 	} else if (job->state == BG) {
 		if (is_fg) {
@@ -446,9 +452,12 @@ void do_bgfg(char **argv)
 		release_jobs_mutex();
 	}
 
+	// After continuing the job
 	if (is_fg) {
+		// Wait for process if it is a foreground job
 		waitfg(pid);
 	} else {
+		// Print some information if it is a background job
 		printf("[%d] (%d) %s", jid, pid, cmdline);
 	}
 }
@@ -462,6 +471,7 @@ void waitfg(pid_t pid)
 	struct job_t *job = getjobpid(jobs, pid);
 
 	// Release mutex here, as we need to get changes from sigchld
+	// Improvement: Acquiring mutex for each iteration might be better
 	release_jobs_mutex();
 
 	// Wait until job is no longer on foreground
@@ -478,6 +488,7 @@ void waitfg(pid_t pid)
 // Just a simple implementation of Spinlock
 volatile int jobs_mutex = 0;
 void acquire_jobs_mutex() {
+	// Do a CAS, mutex by release-acquire synchronization
 	while (__sync_bool_compare_and_swap(&jobs_mutex, 0, 1) == 0) ;
 
 	// Make it not reordered with statements below the lock acquire
@@ -562,7 +573,12 @@ void sigchld_handler(int sig)
 void sigint_handler(int sig) 
 {
 	acquire_jobs_mutex();
+
+	// Get foreground job
 	pid_t pid = fgpid(jobs);
+
+	// As the child's process group id is set to child's process id,
+	// send SIGINT signal to the process group
 	if (killpg(pid, SIGINT) < 0) {
 		unix_error("kill error");
 	}
@@ -577,7 +593,12 @@ void sigint_handler(int sig)
 void sigtstp_handler(int sig) 
 {
 	acquire_jobs_mutex();
+
+	// Get foreground job
 	pid_t pid = fgpid(jobs);
+
+	// As the child's process group id is set to child's process id,
+	// send SIGTSTP signal to the process group
 	if (killpg(pid, SIGTSTP) < 0) {
 		unix_error("kill error");
 	}
