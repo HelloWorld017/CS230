@@ -224,7 +224,7 @@ void eval(char *cmdline)
 		// Execute program
 		if (execve(argv[0], argv, environ) < 0) {
 			// Die if there's no such command
-			printf("%s: Command not found.\n", argv[0]);
+			printf("%s: Command not found\n", argv[0]);
 			exit(1);
 		}
 	} else {
