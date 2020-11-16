@@ -1,4 +1,4 @@
-/* 
+/*
  * tsh - A tiny shell program with job control
  */
 #include <stdio.h>
@@ -51,6 +51,10 @@ struct job_t jobs[MAXJOBS]; /* The job list */
 
 
 /* Function prototypes */
+
+/* Here are my functions */
+void acquire_jobs_mutex();
+void release_jobs_mutex();
 
 /* Here are the functions that you will implement */
 void eval(char *cmdline);
@@ -163,7 +167,7 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
-	char (*argv[MAXARGS])[MAXLINE];
+	char *argv[MAXARGS];
 	int is_background = parseline(cmdline, argv);
 
 	/* Return if no command is given */
@@ -179,9 +183,10 @@ void eval(char *cmdline)
 
 	/* Run for command */
 	// Prevent too many jobs
+	acquire_jobs_mutex();
 	int has_empty_slot = 0;
 
-	for (i = 0; i < MAXJOBS; i++) {
+	for (int i = 0; i < MAXJOBS; i++) {
 		if (jobs[i].pid == 0) {
 			has_empty_slot = 1;
 			break;
@@ -193,6 +198,13 @@ void eval(char *cmdline)
 		return;
 	}
 
+	// Implementing signal blocking
+	sigset_t mask_all, mask_sigchld, mask_prev;
+	sigfillset(&mask_all);
+	sigemptyset(&mask_sigchld);
+	sigaddset(&mask_sigchld, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &mask_sigchld, &mask_prev);
+
 	// Forking process
 	pid_t pid;
 	pid = fork();
@@ -202,6 +214,8 @@ void eval(char *cmdline)
 		unix_error("fork error");
 	} else if (pid == 0) {
 		// Child
+
+		sigprocmask(SIG_SETMASK, &mask_prev, NULL);
 
 		// Set process group to itself
 		if (setpgid(0, 0) < 0)
@@ -216,18 +230,29 @@ void eval(char *cmdline)
 	} else {
 		// Parent
 
+		sigprocmask(SIG_BLOCK, &mask_all, NULL);
+
 		// Add child job to the job list
 		// (This will not fail I think, as we have already checked for failures)
 		if (is_background) {
 			addjob(jobs, pid, BG, cmdline);
 		} else {
 			addjob(jobs, pid, FG, cmdline);
+		}
 
+		release_jobs_mutex();
+		sigprocmask(SIG_SETMASK, &mask_prev, NULL);
+
+		if (is_background) {
+			// Print template if it is BG task
+			acquire_jobs_mutex();
+			printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+			release_jobs_mutex();
+		} else {
 			// Wait if it is FG task
 			waitfg(pid);
 		}
 	}
-    return;
 }
 
 /* 
@@ -294,7 +319,7 @@ int parseline(const char *cmdline, char **argv)
 int builtin_cmd(char **argv) 
 {
 	// Handle quit command
-	if (strcmp(argv[0], "quit")) {
+	if (!strcmp(argv[0], "quit")) {
 		exit(0);
 
 		// This is NOT reachable
@@ -302,20 +327,22 @@ int builtin_cmd(char **argv)
 	}
 
 	// Handle fg command
-	if (strcmp(argv[0], "fg")) {
+	if (!strcmp(argv[0], "fg")) {
 		do_bgfg(argv);
 		return 1;
 	}
 
 	// Handle bg command
-	if (strcmp(argv[0], "bg")) {
+	if (!strcmp(argv[0], "bg")) {
 		do_bgfg(argv);
 		return 1;
 	}
 
 	// Handle jobs command
-	if (strcmp(argv[0], "jobs")) {
+	if (!strcmp(argv[0], "jobs")) {
+		acquire_jobs_mutex();
 		listjobs(jobs);
+		release_jobs_mutex();
 		return 1;
 	}
 
@@ -328,31 +355,120 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+	/* Read arguments */
 	if (argv[1] == NULL) {
-
+		printf("%s command requires PID or %%jobid argument\n", argv[0]);
 		return;
 	}
 
-	if (strcmp(argv[0], "fg")) {
+	int id = 0;
 
+	// Mode - whether the user input is PID or JID
+	// > 0: JID
+	// > 1: PID
+	int mode = 1;
+
+	char *buf = argv[1];
+	if (*buf == '%') {
+		// When it is JID
+		mode = 0;
+		buf++;
 	}
-    return;
+
+	// Read a number from buffer
+	while (*buf) {
+		if ((0x30 > *buf) || (0x39 < *buf)) {
+			printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+			return;
+		}
+
+		id *= 10;
+		id += (*buf - 0x30);
+		buf++;
+	}
+
+	acquire_jobs_mutex();
+	struct job_t *job;
+
+	// Get a job from its id
+	if (mode == 1) {
+		// From PID
+		job = getjobpid(jobs, id);
+		if (job == NULL) {
+			printf("(%d): No such process\n", id);
+			release_jobs_mutex();
+			return;
+		}
+	} else {
+		// From JID
+		job = getjobjid(jobs, id);
+		if (job == NULL) {
+			printf("%%%d: No such job\n", id);
+			release_jobs_mutex();
+			return;
+		}
+	}
+
+	int is_fg = !strcmp(argv[0], "fg");
+	pid_t pid = job->pid;
+	int jid = job->jid;
+
+	// Should copy cmdline before the lock release
+	static char cmdline[MAXLINE];
+	strcpy(cmdline, job->cmdline);
+
+	// State transition
+	if (job->state == ST) {
+		if (is_fg) {
+			job->state = FG;
+		} else {
+			job->state = BG;
+		}
+
+		// Block signals
+		sigset_t mask_all, mask_prev;
+		sigfillset(&mask_all);
+		sigprocmask(SIG_BLOCK, &mask_all, &mask_prev);
+
+		release_jobs_mutex();
+
+		// Continue the job
+		if (killpg(pid, SIGCONT) < 0) {
+			unix_error("kill error");
+		}
+
+		sigprocmask(SIG_SETMASK, &mask_prev, NULL);
+	} else if (job->state == BG) {
+		if (is_fg) {
+			job->state = FG;
+		}
+
+		release_jobs_mutex();
+	}
+
+	if (is_fg) {
+		waitfg(pid);
+	} else {
+		printf("[%d] (%d) %s", jid, pid, cmdline);
+	}
 }
 
-/* 
+/*
  * waitfg - Block until process pid is no longer the foreground process
  */
 void waitfg(pid_t pid)
 {
+	acquire_jobs_mutex();
 	struct job_t *job = getjobpid(jobs, pid);
 
-	// If no such job, return
-	if (job == NULL) {
-		return;
-	}
+	// Release mutex here, as we need to get changes from sigchld
+	release_jobs_mutex();
 
 	// Wait until job is no longer on foreground
-	while (job->state != FG) ;
+
+	while (job != NULL && job->state == FG) {
+		usleep(500);
+	}
 }
 
 /*****************
@@ -360,9 +476,9 @@ void waitfg(pid_t pid)
  *****************/
 
 // Just a simple implementation of Spinlock
-volatile int sigchld_mutex = 0;
-void acquire_sigchld_mutex() {
-	while (__sync_bool_compare_and_swap(*sigchld_mutex, 0, 1) == 0) ;
+volatile int jobs_mutex = 0;
+void acquire_jobs_mutex() {
+	while (__sync_bool_compare_and_swap(&jobs_mutex, 0, 1) == 0) ;
 
 	// Make it not reordered with statements below the lock acquire
 	// The reordering will not occur in volatile I think,
@@ -370,14 +486,14 @@ void acquire_sigchld_mutex() {
 	__sync_synchronize();
 }
 
-void release_sigchld_mutex() {
+void release_jobs_mutex() {
 	// Make it not reordered with statements above the lock release
 	__sync_synchronize();
 
-	sigchld_mutex = 1;
+	jobs_mutex = 0;
 }
 
-/* 
+/*
  * sigchld_handler - The kernel sends a SIGCHLD to the shell whenever
  *     a child job terminates (becomes a zombie), or stops because it
  *     received a SIGSTOP or SIGTSTP signal. The handler reaps all
@@ -386,9 +502,56 @@ void release_sigchld_mutex() {
  */
 void sigchld_handler(int sig) 
 {
-	acquire_sigchld_mutex();
+	// Prevent interleaving of sigchld
+	sigset_t mask_all, prev_all;
+	sigfillset(&mask_all);
 
-    release_sigchld_mutex();
+	int old_errno = errno;
+	pid_t pid;
+	int status;
+
+	// Wait for processes to reap
+	// NOLINTNEXTLINE(hicpp-signed-bitwise)
+	while ((pid = waitpid(-1, &status, WUNTRACED | WNOHANG)) > 0) {
+		sigprocmask(SIG_BLOCK, &mask_all, &prev_all);
+		acquire_jobs_mutex();
+
+		// If process is stopped
+		// NOLINTNEXTLINE(hicpp-signed-bitwise)
+		if (WIFSTOPPED(status)) {
+			struct job_t *job = getjobpid(jobs, pid);
+			job->state = ST;
+
+			// NOLINTNEXTLINE(hicpp-signed-bitwise)
+			printf("Job [%d] (%d) stopped by signal %d\n", job->jid, pid, WSTOPSIG(status));
+
+			release_jobs_mutex();
+			sigprocmask(SIG_SETMASK, &prev_all, NULL);
+
+			continue;
+		}
+
+		// If process is killed by a signal
+		// NOLINTNEXTLINE(hicpp-signed-bitwise)
+		if (WIFSIGNALED(status)) {
+			int jid = pid2jid(pid);
+
+			// NOLINTNEXTLINE(hicpp-signed-bitwise)
+			printf("Job [%d] (%d) terminated by signal %d\n", jid, pid, WTERMSIG(status));
+		}
+
+		// Delete jobs
+		deletejob(jobs, pid);
+		release_jobs_mutex();
+		sigprocmask(SIG_SETMASK, &prev_all, NULL);
+	}
+
+	// PID === 0 -> When no process is ready to be reaped.
+	// PID < 0 -> Error
+	if (pid < 0 && errno != ECHILD)
+		unix_error("wait error");
+
+    errno = old_errno;
 }
 
 /* 
@@ -398,7 +561,12 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
-    return;
+	acquire_jobs_mutex();
+	pid_t pid = fgpid(jobs);
+	if (killpg(pid, SIGINT) < 0) {
+		unix_error("kill error");
+	}
+	release_jobs_mutex();
 }
 
 /*
@@ -408,7 +576,12 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
-    return;
+	acquire_jobs_mutex();
+	pid_t pid = fgpid(jobs);
+	if (killpg(pid, SIGTSTP) < 0) {
+		unix_error("kill error");
+	}
+	release_jobs_mutex();
 }
 
 /*********************
