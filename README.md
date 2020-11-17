@@ -128,7 +128,8 @@ addresses?
 
 Your heap checker will consist of the function `int mm_check(void)` in `mm.c`.  It will check any invariants or consistency conditions you consider prudent.  It returns a nonzero value if and only if your heap is consistent.  You are not limited to the listed suggestions nor are you required to check all of them.  You are encouraged to print out error messages when `mm_check` fails.
 
-This consistency checker is for your own debugging during development. When you submit `mm.c`, make sure to remove any calls to `mm_check` as they will slow down your throughput.  Style points will be given for your `mm_check` function. Make sure to put in comments and document what you are checking.
+This consistency checker is for your own debugging during development. When you submit `mm.c`, make sure to remove any calls to `mm_check` as they will slow down your throughput.
+
 
 ***********************************************************
 ## 6. Support Routines
@@ -256,7 +257,7 @@ you must achieve a balance between utilization and throughput.
 
 - ___Final Score (55 points).___ Final score will be weighted sum of ___Correctness___ and ___Performance___.
 ```math
-your score = correct * \frac{11}{20} + perf * \frac{35}{100}
+your score = correct * \frac{20}{11} + perf * \frac{35}{100}
 ```
 
 
@@ -275,7 +276,7 @@ First command adds `mm.c` to your next commit. Then, you can commit it by typing
 commit command. Execute following command to make sure that you do not have any 
 uncommitted changes to the `mm.c` file.
 
-    unix> git status
+    unix> get status
 
 To hand in your lab, execute the following command
 
