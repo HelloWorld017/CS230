@@ -220,7 +220,7 @@ You will receive **zero points** if you break any of the rules or
 your code is buggy and crashes the driver.  Otherwise, your grade will
 be calculated as follows:
 
-- ___Correctness (20 points).___ You will receive full points if your
+- ___Correctness (11 points).___ You will receive full points if your
 solution passes the correctness tests performed by the driver program.
 You will receive partial credit for each correct trace.
 
