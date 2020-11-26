@@ -18,9 +18,11 @@ fcyc.o: fcyc.c fcyc.h
 ftimer.o: ftimer.c ftimer.h config.h
 clock.o: clock.c clock.h
 
-mm_test.o: mm.c mm.h memlib.h mm_test.c
-backend_test: mm_test.o memlib.o
-	$(CC) $(CFLAGS) -o backend_test mm_test.o memlib.o
+mm_test.o: mm.c mm.h mm_test.c
+	$(CC) -D BACKEND_DEBUG $(CFLAGS) -o mm_test.o -c mm_test.c
+
+backend_test: mm_test.o
+	$(CC) $(CFLAGS) -o backend_test mm_test.o
 
 handin:
 	git tag -a -f submit -m "Submitting Lab"

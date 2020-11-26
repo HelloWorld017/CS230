@@ -1,5 +1,6 @@
 .idea/
 *.o
+*.exe
 backend_test
 mdriver
 
