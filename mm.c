@@ -14,6 +14,7 @@
  *
  * > Allocated
  * >> |  Size        | a | (size_t)
+ * >> |  Padding         | (void) (As it forces me to align payload)
  * >> |  Payload         | (void)
  * >> |  Padding         | (void)
  * >> |  Size        | a | (size_t)
@@ -46,12 +47,19 @@
 #include <string.h>
 
 #include "mm.h"
+#include "memlib.h"
 
+#define BACKEND_DEBUG 1
 #ifdef BACKEND_DEBUG
-	#define MM_DEBUG(fmt, args...) printf(fmt, ##args)
+	#define BACKEND_DEBUG_PRINT(fmt, args...) printf(fmt, ##args)
 #else
-	#define MM_DEBUG(fmt, args...) do {} while (0)
-	#include "memlib.h"
+	#define BACKEND_DEBUG_PRINT(fmt, args...) do {} while (0)
+#endif
+
+#ifdef MM_DEBUG
+	#define MM_DEBUG_PRINT(fmt, args...) printf(fmt, ##args)
+#else
+	#define MM_DEBUG_PRINT(fmt, args...) do {} while (0)
 #endif
 
 /* single word (4) or double word (8) alignment */
@@ -62,6 +70,8 @@
 
 
 #define SIZE_T_SIZE (sizeof(size_t))
+#define SIZE_T_SIZE_PAD ALIGN(SIZE_T_SIZE) - SIZE_T_SIZE
+#define SIZE_T_SIZE_PADDED ALIGN(SIZE_T_SIZE)
 
 /*
  * Backend
@@ -192,6 +202,7 @@ void _backend_add(size_t* current_ptr) {
 	// Get size of iterating node
 	size_t current_size = (*current_node & ~0x7);
 	size_t* next_ptr;
+	BACKEND_DEBUG_PRINT("Add %d\n", current_size);
 
 	// Decide where to descend
 	// > Sort by size, then sort by address
@@ -257,7 +268,7 @@ inline size_t* _backend_nearest(size_t* node_ptr, int is_predecessor) {
  * _backend_remove_rebalance:
  *     Make one level of the tree, which balance is broken by remove, as a balanced
  */
-inline void _backend_remove_rebalance(size_t* current_ptr) {
+void _backend_remove_rebalance(size_t* current_ptr) {
 	if (current_ptr == NULL)
 		return;
 
@@ -389,7 +400,7 @@ inline size_t* _backend_remove_unbalanced(size_t* current_ptr) {
  *     If there's no such node, return null
  */
 size_t _backend_remove_size;
-size_t _backend_remove_target;
+size_t* _backend_remove_target;
 size_t* _backend_remove(size_t* current_ptr) {
 	// Get current iterating node
 	size_t* current_node = _backend_node(current_ptr);
@@ -402,7 +413,6 @@ size_t* _backend_remove(size_t* current_ptr) {
 	size_t current_size = (*current_node) & ~0x7;
 
 	// Descend to left or right
-	size_t* next_ptr;
 	size_t* next_node;
 	if (_backend_remove_size < current_size) {
 		// Descend to left
@@ -428,7 +438,7 @@ size_t* _backend_remove(size_t* current_ptr) {
 	}
 
 	// Rebalance current level
-	_backend_remove_rebalance(current_node);
+	_backend_remove_rebalance(current_ptr);
 	return next_node;
 }
 
@@ -457,7 +467,7 @@ size_t* _backend_pop(size_t* current_ptr) {
 
 	// Get size of iterating node
 	size_t current_size = (*current_node) & ~0x7;
-	MM_DEBUG("Iterate! %d\n", current_size);
+	BACKEND_DEBUG_PRINT("Iterate! %d\n", current_size);
 
 	// The node to be returned
 	size_t* next_node;
@@ -470,12 +480,9 @@ size_t* _backend_pop(size_t* current_ptr) {
 		next_node = _backend_node(next_ptr);
 		int is_current = 0;
 
-		if (_backend_pop_target != current_node) {
-			// If current mode is find mode
-			is_current = 1;
-		} else if (next_node != NULL) {
+		if (next_node != NULL) {
 			// If we have left child, first descend to left child
-			MM_DEBUG("Left > ");
+			BACKEND_DEBUG_PRINT("Left > ");
 			size_t* retval = _backend_pop(next_ptr);
 
 			if (retval == NULL) {
@@ -492,7 +499,7 @@ size_t* _backend_pop(size_t* current_ptr) {
 
 		if (is_current) {
 			// If the result is current_node
-			MM_DEBUG("Found! %d\n", current_size);
+			BACKEND_DEBUG_PRINT("Found! %d\n", current_size);
 
 			// Remove and return current_node
 			next_node = _backend_remove_unbalanced(current_ptr);
@@ -503,13 +510,13 @@ size_t* _backend_pop(size_t* current_ptr) {
 		next_node = _backend_node(next_ptr);
 
 		if (next_node != NULL) {
-			MM_DEBUG("Right > ");
+			BACKEND_DEBUG_PRINT("Right > ");
 			next_node = _backend_pop(next_ptr);
 
 			if (next_node == NULL)
 				return NULL;
 		} else {
-			MM_DEBUG("Not-Found //\n");
+			BACKEND_DEBUG_PRINT("Not-Found //\n");
 			// As there's no right node, we couldn't find
 			return NULL;
 		}
@@ -517,7 +524,7 @@ size_t* _backend_pop(size_t* current_ptr) {
 
 	// Rebalance the tree of current level
 	_backend_remove_rebalance(current_ptr);
-	MM_DEBUG("Rebalance > Done...\n");
+	BACKEND_DEBUG_PRINT("Rebalance > Done...\n");
 
 	return next_node;
 }
@@ -532,33 +539,34 @@ inline size_t* backend_pop(size_t size) {
  */
 void _backend_debug(size_t* node, int lvl) {
 	for (int i = 0; i < lvl; i++)
-		MM_DEBUG(" ");
+		BACKEND_DEBUG_PRINT(" ");
 
 	if (node == NULL) {
-		MM_DEBUG("()\n");
+		BACKEND_DEBUG_PRINT("()\n");
 		return;
 	}
 
-	MM_DEBUG("NODE %d (\n", *(node) & ~0x7);
+	BACKEND_DEBUG_PRINT("NODE %d (\n", *(node) & ~0x7);
 	_backend_debug(_backend_left(node), lvl + 1);
 	_backend_debug(_backend_right(node), lvl + 1);
 
 	for (int i = 0; i < lvl; i++)
-		MM_DEBUG(" ");
+		BACKEND_DEBUG_PRINT(" ");
 
-	MM_DEBUG(")\n");
+	BACKEND_DEBUG_PRINT(")\n");
 }
 
 void backend_debug(void) {
 	_backend_debug(root, 0);
 }
 
-#ifdef BACKEND_DEBUG
-int mm_init(void) { return 0; }
-void *mm_malloc(size_t size) { return NULL; }
-void mm_free(void *ptr) {}
-void *mm_realloc(void *ptr, size_t size) { return NULL; }
-#else
+
+/*
+ * Malloc
+ * ====
+ *
+ * A malloc, free, realloc implementation
+ */
 
 void* heap;
 
@@ -570,8 +578,8 @@ int mm_init(void) {
 	mem_init();
 
 	// Get the aligned start position of heap
-	size_t start_heap = mem_heap_lo();
-	heap = ALIGN(start_heap);
+	void* start_heap = mem_heap_lo();
+	heap = (void*) ALIGN((size_t) start_heap);
 
 	// Claim some memory to align heap start
 	mem_sbrk(heap - start_heap);
@@ -587,37 +595,49 @@ int mm_init(void) {
  * > Find first node larger than size
  * > Delete it from tree
  * > Add the node of remainder to the tree
+ *
+ * Warning: The node is aligned when it is allocated,
+ *     but not aligned when it is free
+ *     (Actually it is aligned to 4 in x86)
  */
 void *mm_malloc(size_t size) {
+	MM_DEBUG_PRINT("==== Alloc %d ====\n", size);
+	MM_DEBUG_PRINT("Padding Mode: %d\n", SIZE_T_SIZE_PAD);
 	size_t* allocated = backend_pop(size);
-	size_t node_size = ALIGN(size + 2 * SIZE_T_SIZE);
+	size_t node_size = ALIGN(size) + 2 * SIZE_T_SIZE_PADDED;
 	size_t body_size;
 
 	if (allocated == NULL) {
-		// When we cannot coalesce
-		size_t* claim_start = ((char*) mem_heap_hi() + 1);
+		MM_DEBUG_PRINT("Claim Mode: sbrk\n");
+
+		// Default when we cannot coalesce
+		size_t* claim_start = (size_t*) ((char*) mem_heap_hi() + 1);
 		size_t claim_size = node_size;
 
 		// Calculate body size
-		body_size = claim_size - 2 * SIZE_T_SIZE;
+		body_size = claim_size - 2 * SIZE_T_SIZE_PADDED;
 
 		if (mem_heapsize() > 0) {
+			MM_DEBUG_PRINT("Coalesce with left!\n");
 			// Try to coalesce with previous memory
 			size_t* footer = (size_t*) (((char*) claim_start) - SIZE_T_SIZE);
 
 			// Make sure it is free, not allocated
 			if(!((*footer) & 0x7)) {
 				// We can earn size of (Header + Body + Footer)
-				size_t body_size = (*footer) & ~0x7;
-				claim_size -= body_size + 2 * SIZE_T_SIZE;
+				size_t prev_body_size = (*footer) & ~0x7;
+				claim_size -= prev_body_size + 2 * SIZE_T_SIZE_PADDED;
 
 				// Calculate pointer to node and remove
-				size_t* header = (size_t*) (((char*) footer) - body_size - SIZE_T_SIZE);
+				// FIXME Shouldn't it be (((char*) footer) - prev_body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED) ?
+				size_t* header = (size_t*) (((char*) footer) - prev_body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED);
 				backend_remove(header);
 
 				claim_start = header;
 			}
 		}
+
+		MM_DEBUG_PRINT("Claim size: %d\n", claim_size);
 
 		// Claim memory
 		if (mem_sbrk(claim_size) < 0) {
@@ -627,26 +647,31 @@ void *mm_malloc(size_t size) {
 
 		allocated = claim_start;
 	} else {
+		MM_DEBUG_PRINT("Claim Mode: from tree\n");
 		// Calculate body size from header
 		body_size = (*allocated) & ~0x7;
 
 		// Check if we can split the allocated node into two parts
-		size_t allocated_node_size = ALIGN(body_size + 2 * SIZE_T_SIZE);
+		size_t allocated_node_size = ALIGN(body_size + 2 * SIZE_T_SIZE_PADDED);
 
 		if (allocated_node_size > node_size + BACKEND_MIN_SIZE) {
 			// Shrink body size
-			body_size = node_size - 2 * SIZE_T_SIZE;
+			body_size = node_size - 2 * SIZE_T_SIZE_PADDED;
 
 			// Calculate body size of next node
-			size_t next_body_size = allocated_node_size - node_size - 2 * SIZE_T_SIZE;
+			size_t next_body_size = allocated_node_size - node_size - 2 * SIZE_T_SIZE_PADDED;
 
 			// Assign size to header of next node
 			size_t* next_start = (size_t*) ((char*) allocated) + node_size;
 			*next_start = ((next_body_size) & ~0x7);
 
 			// Assign size to footer of next node
-			size_t* next_footer = (size_t*) (((char*) next_start) + SIZE_T_SIZE + next_body_size);
+			size_t* next_footer = (size_t*) (((char*) next_start) + SIZE_T_SIZE_PADDED + next_body_size + SIZE_T_SIZE_PAD);
 			*next_footer = ((next_body_size) & ~0x7);
+
+			// Delete children
+			*(next_start + 1) = ((size_t) NULL) & ~0x7;
+			*(next_start + 2) = ((size_t) NULL) & ~0x7;
 
 			// Index next node to the tree
 			backend_add(next_start);
@@ -654,16 +679,20 @@ void *mm_malloc(size_t size) {
 	}
 
 	// Calculate start of body
-	char* body_start = ((char*) allocated) + SIZE_T_SIZE;
+	char* body_start = ((char*) allocated) + SIZE_T_SIZE_PADDED;
+	MM_DEBUG_PRINT("Done claim for %d: %u\n", body_size, (size_t) body_start);
 
 	// Assign size & allocated flag to header
+	MM_DEBUG_PRINT("Write header\n");
 	*allocated = ((body_size) & ~0x7) | 0x1;
 
 	// Assign size & allocated flag to footer
-	size_t* allocated_footer = (size_t*) (body_start + body_size);
+	size_t* allocated_footer = (size_t*) (body_start + body_size + SIZE_T_SIZE_PAD);
+	MM_DEBUG_PRINT("Write footer\n");
 	*allocated_footer = ((body_size) & ~0x7) | 0x1;
 
 	// Return start of body
+	MM_DEBUG_PRINT("Bye bye my kawai memory\n");
 	return (void*) body_start;
 }
 
@@ -674,59 +703,76 @@ void *mm_malloc(size_t size) {
  * > Add the node to the tree
  */
 void mm_free(void *ptr) {
-	size_t* header = (size_t*) ptr;
+	MM_DEBUG_PRINT("==== Free (%u) ====\n", (size_t) ptr);
+	size_t* header = (size_t*) (((char*) ptr) - SIZE_T_SIZE_PADDED);
 	size_t header_content = *header;
 	size_t body_size = header_content & ~0x7;
 
-	size_t* footer = (size_t*) (((char*) header) + SIZE_T_SIZE + body_size);
+	MM_DEBUG_PRINT("Found Size: %d\n", body_size);
 
-	if (header > heap) {
+	size_t* footer = (size_t*) (((char*) header) + SIZE_T_SIZE_PADDED + body_size + SIZE_T_SIZE_PAD);
+
+	if (header > (size_t*) heap) {
 		// Check for coalesce with previous node
 		size_t* previous_footer = header - 1;
 		size_t previous_footer_content = *previous_footer;
 
 		if (!(previous_footer_content & 0x7)) {
+			MM_DEBUG_PRINT("Coalesce with Left!\n");
+
 			// When previous node can be coalesced
 			size_t previous_body_size = previous_footer_content & ~0x7;
-			size_t* previous_header = (size_t*) (((char*) previous_footer) - previous_body_size - SIZE_T_SIZE);
+			// FIXME Shouldn't it be (size_t*) (((char*) previous_footer) - SIZE_T_SIZE_PAD - previous_body_size - SIZE_T_SIZE_PADDED);
+			size_t* previous_header = (size_t*) (((char*) previous_footer) - SIZE_T_SIZE_PAD - previous_body_size - SIZE_T_SIZE_PADDED);
 
 			// Remove previous node from tree
 			backend_remove(previous_header);
 
 			// Assign merged node's header with merged size
-			body_size = previous_body_size + 2 * SIZE_T_SIZE + body_size;
+			body_size += previous_body_size + 2 * SIZE_T_SIZE_PADDED;
 			header = previous_header;
-			*header = body_size & 0x7;
+			*header = body_size & ~0x7;
 
 			// Assign merged node's footer with merged size
-			*footer = body_size & 0x7;
+			*footer = body_size & ~0x7;
 		}
 	}
 
-	if (footer < (mem_heap_hi()) {
+	if (footer < (size_t*) (((char*) mem_heap_hi() + 1) - SIZE_T_SIZE_PAD)) {
 		// Check for coalesce with next node
 		size_t* next_header = footer + 1;
 		size_t next_header_content = *next_header;
 
 		if (!(next_header_content & 0x7)) {
+			MM_DEBUG_PRINT("Coalesce with Right!\n");
+
 			// When next node can be coalesced
 			size_t next_body_size = next_header_content & ~0x7;
-			size_t* next_footer = (size_t*) (((char*) header) + SIZE_T_SIZE + body_size);
+			size_t* next_footer = (size_t*) (((char*) next_header) + SIZE_T_SIZE_PADDED + next_body_size + SIZE_T_SIZE_PAD);
 
 			// Remove next node from tree
 			backend_remove(next_header);
 
 			// Assign merged node's footer with merged size
-			body_size = next_body_size + 2 * SIZE_T_SIZE + body_size;
+			body_size += next_body_size + 2 * SIZE_T_SIZE_PADDED;
 			footer = next_footer;
-			*footer = body_size & 0x7;
+			*footer = body_size & ~0x7;
 
 			// Assign merged node's header with merged size
-			*header = body_size & 0x7;
+			*header = body_size & ~0x7;
 		}
 	}
 
+	MM_DEBUG_PRINT("Write Header / Footer\n");
+	*header = body_size & ~0x7;
+	*footer = body_size & ~0x7;
+
+	MM_DEBUG_PRINT("Write Children\n");
+	*(header + 1) = ((size_t) NULL) & ~0x7;
+	*(header + 2) = ((size_t) NULL) & ~0x7;
+
 	backend_add(header);
+	MM_DEBUG_PRINT("Hello, my memory\n");
 }
 
 /*
@@ -747,4 +793,3 @@ void *mm_realloc(void *ptr, size_t size) {
 	mm_free(oldptr);
 	return newptr;
 }
-#endif

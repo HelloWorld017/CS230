@@ -578,7 +578,7 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 		malloc_error(tracenum, i, "mm_malloc failed.");
 		return 0;
 	    }
-	    
+
 	    /* 
 	     * Test the range of the new block for correctness and add it 
 	     * to the range list if OK. The block must be  be aligned properly,
@@ -586,7 +586,7 @@ static int eval_mm_valid(trace_t *trace, int tracenum, range_t **ranges)
 	     */ 
 	    if (add_range(ranges, p, size, tracenum, i) == 0)
 		return 0;
-	    
+
 	    /* ADDED: cgw
 	     * fill range with low byte of index.  This will be used later
 	     * if we realloc the block and wish to make sure that the old
