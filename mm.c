@@ -12,7 +12,6 @@
  * > Legend
  * >> ^: For AVL Tree
  * >> a (1bit): Allocated or not
- * >> f (Total 6bit): The factor of node
  *
  * > Allocated
  * >> |  Size        | a | (size_t)
@@ -23,8 +22,9 @@
  *
  * > Free
  * >> |  Size              | a  | (size_t)
- * >> |  ChildL^ | f1 | f2 | f3 | (size_t)
- * >> |  ChildR^ | f4 | f5 | f6 | (size_t)
+ * >> |  ChildL^                | (size_t)
+ * >> |  ChildR^                | (size_t)
+ * >> |  Height^                | (unsigned)
  * >> |  Padding                | (void)
  * >> |  Size              | a  | (size_t)
  *
@@ -49,7 +49,7 @@
 #include <string.h>
 
 #include "mm.h"
-//#include "memlib.h"
+#include "memlib.h"
 
 #ifdef BACKEND_DEBUG
 	#define BACKEND_DEBUG_PRINT(fmt, args...) printf(fmt, ##args)
@@ -89,7 +89,7 @@ typedef struct _Node {
 	unsigned height: 16;
 } Node;
 
-#define BACKEND_MIN_SIZE ALIGN(sizeof(Node))
+#define BACKEND_MIN_SIZE (ALIGN(sizeof(Node)) + SIZE_T_SIZE_PADDED)
 Node* root;
 
 /*
@@ -155,6 +155,8 @@ inline Node* _backend_rotate_right(Node* node) {
  *     Make one level of the tree, which balance is broken, as a balanced
  */
 inline Node* _backend_rebalance(Node* node, int where) {
+	if (where == -1) return node;
+
 	BACKEND_DEBUG_PRINT("Rebalance!\n");
 	int factor = _backend_factor(node);
 	if (factor > 1) {
@@ -196,9 +198,9 @@ Node* _backend_add(Node* current_node, size_t node_size, int* where) {
 
 	// Get size of iterating node
 	size_t current_size = _backend_size(current_node);
-	BACKEND_DEBUG_PRINT("Add %d\n", current_size);
+	BACKEND_DEBUG_PRINT("Add %u\n", current_size);
 
-	int my_where;
+	int my_where = -1;
 
 	// Decide where to descend
 	// > Sort by size, then sort by address
@@ -222,11 +224,11 @@ Node* _backend_add(Node* current_node, size_t node_size, int* where) {
 		}
 	}
 
-	_backend_update_height(current_node);
 	return _backend_rebalance(current_node, my_where);
 }
 
-inline void backend_add(Node* node) {
+inline void backend_add(size_t* node_raw) {
+	Node* node = (Node*) node_raw;
 	size_t node_size = _backend_size(node);
 	node->height = 0;
 	node->child_l = NULL;
@@ -236,6 +238,7 @@ inline void backend_add(Node* node) {
 
 	int where;
 	root = _backend_add(root, node_size, &where);
+	BACKEND_DEBUG_PRINT("Done add!\n");
 }
 
 /*
@@ -332,11 +335,12 @@ Node* _backend_remove(Node* current_node, Node* target_node) {
 	return _backend_rebalance(next_node, where);
 }
 
-inline void backend_remove(Node* target_node) {
+inline void backend_remove(size_t* target_node) {
 	if (target_node == NULL)
 		return;
 
-	root = _backend_remove(root, target_node);
+	root = _backend_remove(root, (Node*) target_node);
+	BACKEND_DEBUG_PRINT("Done remove!\n");
 }
 
 /*
@@ -392,11 +396,10 @@ Node* _backend_pop(Node* current_node, Node** return_node, size_t target_size) {
 		// When the result is in the right node
 		if (current_node->child_r != NULL) {
 			BACKEND_DEBUG_PRINT("Right > ");
-			Node* retval = _backend_pop(current_node->child_l, return_node, target_size);
+			Node* retval = _backend_pop(current_node->child_r, return_node, target_size);
 
 			if ((*return_node) == NULL) {
 				// Couldn't find in right
-				BACKEND_DEBUG_PRINT("Not-Found //\n");
 				return current_node;
 			}
 
@@ -423,11 +426,12 @@ Node* _backend_pop(Node* current_node, Node** return_node, size_t target_size) {
 	return _backend_rebalance(next_node, where);
 }
 
-inline Node* backend_pop(size_t size) {
-	Node* return_node;
+inline size_t* backend_pop(size_t size) {
+	Node* return_node = NULL;
 	root = _backend_pop(root, &return_node, size);
 
-	return return_node;
+	BACKEND_DEBUG_PRINT("Done pop!\n");
+	return (size_t*) return_node;
 }
 
 /*
@@ -512,14 +516,6 @@ inline size_t* _mm_footer(size_t* header, size_t body_size) {
 }
 
 /*
- * _mm_as_leaf: Delete children of given node and make it as a leaf node by its header
- */
-inline void _mm_as_leaf(size_t* header) {
-	*(header + 1) = ((size_t) NULL) & ~0x7;
-	*(header + 2) = ((size_t) NULL) & ~0x7;
-}
-
-/* 
  * mm_init: Initialize the malloc package
  */
 int mm_init(void) {
@@ -535,6 +531,10 @@ int mm_init(void) {
 
 	// Initialize tree
 	backend_init();
+
+	MM_DEBUG_PRINT("\n==== NENW'S MALLOC ====\n");
+	MM_DEBUG_PRINT("Alignment: %u\n", ALIGNMENT);
+	MM_DEBUG_PRINT("Minimal Backend Block: %u\n", BACKEND_MIN_SIZE);
 
 	return 0;
 }
@@ -575,6 +575,7 @@ void *mm_malloc(size_t size) {
 			if(!((*footer) & 0x7)) {
 				// We can earn size of (Header + Body + Footer)
 				size_t prev_body_size = (*footer) & ~0x7;
+				MM_DEBUG_PRINT("Earned memory: %u\n", prev_body_size + 2 * SIZE_T_SIZE_PADDED);
 				claim_size -= prev_body_size + 2 * SIZE_T_SIZE_PADDED;
 
 				// Calculate pointer to node and remove
@@ -616,9 +617,6 @@ void *mm_malloc(size_t size) {
 			// Assign size to footer of next node
 			size_t* next_footer = _mm_footer(next_header, next_body_size);
 			*next_footer = ((next_body_size) & ~0x7);
-
-			// Delete children
-			_mm_as_leaf(next_header);
 
 			// Index next node to the tree
 			backend_add(next_header);
@@ -713,9 +711,6 @@ void mm_free(void *ptr) {
 	*header = body_size & ~0x7;
 	*footer = body_size & ~0x7;
 
-	MM_DEBUG_PRINT("Write Children\n");
-	_mm_as_leaf(header);
-
 	backend_add(header);
 	backend_debug();
 	MM_DEBUG_PRINT("Hello, my memory\n");
@@ -784,12 +779,6 @@ void *mm_realloc(void *old_allocation, size_t new_size) {
 		// Assign size to footer of next node
 		size_t* next_footer = _mm_footer(next_header, next_body_size);
 		*next_footer = ((next_body_size) & ~0x7);
-
-		// Delete children
-		_mm_as_leaf(next_header);
-		MM_DEBUG_PRINT("Header %u\n", *(next_header));
-		MM_DEBUG_PRINT("ChildL %u\n", *(next_header + 1));
-		MM_DEBUG_PRINT("ChildR %u\n", *(next_header + 2));
 
 		// Index next node to the tree
 		backend_add(next_header);
