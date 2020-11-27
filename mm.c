@@ -2,15 +2,17 @@
  * mm.c - nenw*'s Malloc Implementation
  * > It's "malloc", not "murloc"
  *
- * Implemented using Doubly-Linked List and AA Tree (equiv. 2-3 Tree) for indexing
- * > Find free memory using AA Tree, sorted by Size -> Address
+ * Implemented using Doubly-Linked List and AVL Tree for indexing
+ * > Find free memory using AVL Tree, sorted by Size -> Address
  * > Coalesce using Doubly-linked List
+ * > Originally, it was implemented with AA Tree but,
+ * >     as it was too slow, I have rewrote whole code into AVL Tree
  *
  * Block Format:
  * > Legend
- * >> ^: For AA Tree
+ * >> ^: For AVL Tree
  * >> a (1bit): Allocated or not
- * >> l (Total 6bit): The level of node
+ * >> f (Total 6bit): The factor of node
  *
  * > Allocated
  * >> |  Size        | a | (size_t)
@@ -21,8 +23,8 @@
  *
  * > Free
  * >> |  Size              | a  | (size_t)
- * >> |  ChildL^ | l1 | l2 | l3 | (size_t)
- * >> |  ChildR^ | l4 | l5 | l6 | (size_t)
+ * >> |  ChildL^ | f1 | f2 | f3 | (size_t)
+ * >> |  ChildR^ | f4 | f5 | f6 | (size_t)
  * >> |  Padding                | (void)
  * >> |  Size              | a  | (size_t)
  *
@@ -47,7 +49,7 @@
 #include <string.h>
 
 #include "mm.h"
-#include "memlib.h"
+//#include "memlib.h"
 
 #ifdef BACKEND_DEBUG
 	#define BACKEND_DEBUG_PRINT(fmt, args...) printf(fmt, ##args)
@@ -63,6 +65,7 @@
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
+#define ALIGNMENT_LOG 3
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -78,100 +81,103 @@
  *
  * A data structure implementation
  */
-#define BACKEND_MIN_SIZE ALIGN(SIZE_T_SIZE * 4)
-size_t* root;
+
+typedef struct _Node {
+	size_t size;
+	struct _Node* child_l;
+	struct _Node* child_r;
+	unsigned height: 16;
+} Node;
+
+#define BACKEND_MIN_SIZE ALIGN(sizeof(Node))
+Node* root;
 
 /*
- * _backend_node: Convert ptr to node
+ * _backend_factor: Get balance factor
  */
-inline size_t* _backend_node(size_t* ptr) {
-	return (size_t*) ((*ptr) & ~0x7);
+inline int _backend_factor(Node* node) {
+	int left_height = node->child_l ? node->child_l->height : 0;
+	int right_height = node->child_r ? node->child_r->height : 0;
+
+	return left_height - right_height;
+}
+
+inline void _backend_update_height(Node* node) {
+	BACKEND_DEBUG_PRINT("Update height!\n");
+	int left_height = node->child_l ? node->child_l->height : 0;
+	int right_height = node->child_r ? node->child_r->height : 0;
+
+	node->height = (left_height < right_height ? right_height : left_height) + 1;
+}
+
+inline size_t _backend_size(Node* node) {
+	return (node->size) & ~0x7;
 }
 
 /*
- * _backend_level: Get level of given node
+ * _backend_rotate_left: Apply left rotation operation to given node
  */
-inline int _backend_level(size_t* ptr) {
-	return (((*(ptr + 1)) & 0x7) << 3) + ((*(ptr + 2)) & 0x7);
-}
+inline Node* _backend_rotate_left(Node* node) {
+	// Get right node from node
+	Node* right_node = node->child_r;
 
-/*
- * _backend_left: Get left node of given node
- */
-inline size_t* _backend_left(size_t* node) {
-	return _backend_node(node + 1);
-}
+	// (right of node) is (left of right_node)
+	node->child_r = right_node->child_l;
 
-/*
- * _backend_right: Get right node of given node
- */
-inline size_t* _backend_right(size_t* node) {
-	return _backend_node(node + 2);
-}
-
-/*
- * _backend_skew: Apply skew operation to given ptr
- */
-inline void _backend_skew(size_t* node_ptr) {
-	// Get node from ptr
-	size_t* node = _backend_node(node_ptr);
-	if (node == NULL) return;
-
-	// Get left node from node
-	size_t* left_node = _backend_left(node);
-	if (left_node == NULL) return;
-
-	// When left is same level with node
-	// (Horizontal connection with left)
-	int level = _backend_level(node);
-	int left_level = _backend_level(left_node);
-	if(level != left_level) return;
-
-	// (Left child of node) is (Right child of left_node)
-	*(node + 1) = ((size_t) _backend_right(left_node)) | ((level >> 3) & 0x7);
-
-	// (Right child of left_node) is (node)
-	*(left_node + 2) = ((size_t) node) | (left_level & 0x7);
-
-	// (node) is (left_node)
-	*node_ptr = ((size_t) left_node) | ((*node_ptr) & 0x7);
-}
-
-/*
- * _backend_skew: Apply split operation to given ptr
- */
-inline void _backend_split(size_t* node_ptr) {
-	// Get node from ptr
-	size_t* node = _backend_node(node_ptr);
-	if (node == NULL) return;
-
-	// Get left, right, right_right node from node
-	size_t* right_node = _backend_right(node);
-	if (right_node == NULL) return;
-
-	size_t* right_right_node = _backend_right(right_node);
-	if (right_right_node == NULL) return;
-
-	// When right_right is same level with node
-	// (Two simultaneous horizontal connection)
-	int level = _backend_level(node);
-	int right_right_level = _backend_level(right_right_node);
-	if (level != right_right_level) return;
-
-	// Increase right level
-	int right_level = _backend_level(right_node) + 1;
-
-	// (Right child of node) is (Left child of right_node)
-	*(node + 2) = ((size_t) _backend_left(right_node)) | (level & 0x7);
-
-	// (Left child of right_node) is (node)
-	*(right_node + 1) = ((size_t) node) | ((right_level >> 3) & 0x7);
-
-	// Assign right_level
-	*(right_node + 2) = ((size_t) right_right_node) | (right_level & 0x7);
+	// (left of right_node) is (node)
+	right_node->child_l = node;
+	_backend_update_height(node);
 
 	// (node) is (right_node)
-	*node_ptr = ((size_t) right_node) | ((*node_ptr) & 0x7);
+	return right_node;
+}
+
+/*
+ * _backend_rotate_right: Apply right rotation operation to given node
+ */
+inline Node* _backend_rotate_right(Node* node) {
+	// Get left node from node
+	Node* left_node = node->child_l;
+
+	// (left of node) is (right of left_node)
+	node->child_l = left_node->child_r;
+
+	// (right of left_node) is (node)
+	left_node->child_r = node;
+	_backend_update_height(node);
+
+	// (node) is (left_node)
+	return left_node;
+}
+
+/*
+ * _backend_remove_rebalance:
+ *     Make one level of the tree, which balance is broken, as a balanced
+ */
+inline Node* _backend_rebalance(Node* node, int where) {
+	BACKEND_DEBUG_PRINT("Rebalance!\n");
+	int factor = _backend_factor(node);
+	if (factor > 1) {
+		if (where == 1) {
+			// LR case
+			node->child_l = _backend_rotate_left(node->child_l);
+			return _backend_rotate_right(node);
+		} else {
+			// LL case
+			return _backend_rotate_right(node);
+		}
+	} else if (factor < -1) {
+		if (where == 1) {
+			// RR case
+			return _backend_rotate_left(node);
+		} else {
+			// RL case
+			node->child_r = _backend_rotate_right(node->child_r);
+			return _backend_rotate_left(node);
+		}
+	}
+
+	return node;
 }
 
 inline void backend_init(void) {
@@ -181,266 +187,156 @@ inline void backend_init(void) {
 /*
  * backend_add: Add new node to the tree
  */
-size_t* _backend_add_node;
-void _backend_add(size_t* current_ptr, size_t node_size) {
-	// Get iterating node
-	size_t* current_node = _backend_node(current_ptr);
-
+Node* _backend_add_node;
+Node* _backend_add(Node* current_node, size_t node_size, int* where) {
 	// If current node is null, assign and escape
 	if (current_node == NULL) {
-		BACKEND_DEBUG_PRINT("AddLeaf %d\n", *_backend_add_node & ~0x7);
-		*current_ptr = ((size_t) _backend_add_node) | ((*current_ptr) & 0x7);
-		return;
+		return _backend_add_node;
 	}
 
 	// Get size of iterating node
-	size_t current_size = (*current_node & ~0x7);
-	size_t* next_ptr;
+	size_t current_size = _backend_size(current_node);
 	BACKEND_DEBUG_PRINT("Add %d\n", current_size);
+
+	int my_where;
 
 	// Decide where to descend
 	// > Sort by size, then sort by address
 	if (node_size > current_size) {
-		next_ptr = current_node + 2;
+		// Descend to right
+		current_node->child_r = _backend_add(current_node->child_r, node_size, &my_where);
+		*where = 1;
 	} else if (node_size < current_size) {
-		next_ptr = current_node + 1;
+		// Descend to left
+		current_node->child_l = _backend_add(current_node->child_l, node_size, &my_where);
+		*where = 0;
 	} else {
 		if (_backend_add_node < current_node) {
-			next_ptr = current_node + 1;
+			// Descend to left
+			current_node->child_l = _backend_add(current_node->child_l, node_size, &my_where);
+			*where = 0;
 		} else {
-			next_ptr = current_node + 2;
+			// Descend to right
+			current_node->child_r = _backend_add(current_node->child_r, node_size, &my_where);
+			*where = 1;
 		}
 	}
 
-	_backend_add(next_ptr, node_size);
-
-	// Else, skew & split this node if available
-	_backend_skew(current_ptr);
-	_backend_split(current_ptr);
+	_backend_update_height(current_node);
+	return _backend_rebalance(current_node, my_where);
 }
 
-inline void backend_add(size_t* node) {
-	size_t node_size = (*node) & ~0x7;
+inline void backend_add(Node* node) {
+	size_t node_size = _backend_size(node);
+	node->height = 0;
+	node->child_l = NULL;
+	node->child_r = NULL;
+
 	_backend_add_node = node;
-	_backend_add((size_t*) &root, node_size);
+
+	int where;
+	root = _backend_add(root, node_size, &where);
 }
 
 /*
- * _backend_nearest: Find predecessor / successor ptr
+ * _backend_successor: Find successor node
  */
-inline size_t* _backend_nearest(size_t* node_ptr, int is_predecessor) {
-	size_t* current_ptr = node_ptr;
-
-	if (current_ptr == NULL)
-		return current_ptr;
-
-	// Get start node
-	size_t* current_node = _backend_node(node_ptr);
+inline Node* _backend_successor(Node* current_node) {
 	if (current_node == NULL)
-		return current_ptr;
+		return NULL;
 
 	while (1) {
-		// If it is predecessor, keep descend to left
-		// Else, keep descend to right
-		size_t* next_ptr =
-				is_predecessor ? current_node + 1 : current_node + 2;
+		// Keep descend to left
 
-		size_t* next_node = _backend_node(next_ptr);
+		Node* next_node = current_node->child_l;
 		if (next_node == NULL) {
 			// When we can't proceed, return final node
-			return current_ptr;
+			return current_node;
 		} else {
 			// As we can proceed, keep proceed to next child
 			current_node = next_node;
-			current_ptr = next_ptr;
 		}
 	}
 }
 
-
 /*
- * _backend_remove_rebalance:
- *     Make one level of the tree, which balance is broken by remove, as a balanced
- */
-void _backend_remove_rebalance(size_t* current_ptr) {
-	// Get current node
-	size_t* current_node = _backend_node(current_ptr);
-	if (current_node == NULL)
-		return;
-
-	// Try to get left & right child of node
-	size_t* left_node = _backend_left(current_node);
-	size_t* right_node = _backend_right(current_node);
-
-	/*
-	 * Rebalance Step 1: Shrink level to target_level
-	 */
-	int left_level, right_level, target_level = -1;
-
-	if (left_node != NULL) {
-		// When has left child
-		left_level = _backend_level(left_node);
-		target_level = left_level + 1;
-	}
-
-	if (right_node != NULL) {
-		// When has right child
-		right_level = _backend_level(right_node);
-		target_level = right_level + 1;
-	}
-
-	if ((left_node != NULL) && (right_node != NULL)) {
-		// When has both child, make the target level as the minimum of two target levels
-		target_level = ((left_level < right_level) ? left_level : right_level) + 1;
-	}
-
-	if (_backend_level(current_node) > target_level && target_level > 0) {
-		// When the level is larger than target_level, shrink it to target_level
-		*(current_node + 1) = (*(current_node + 1) & ~0x7) | ((target_level >> 3) & 0x7);
-		*(current_node + 2) = (*(current_node + 2) & ~0x7) | (target_level & 0x7);
-
-		if (right_node != NULL && (right_level > target_level)) {
-			// When the level of right child is larger than target_level, shrink it to target_level
-			*(right_node + 1) = (*(right_node + 1) & ~0x7) | ((target_level >> 3) & 0x7);
-			*(right_node + 2) = (*(right_node + 2) & ~0x7) | (target_level & 0x7);
-		}
-
-
-		/*
-		 * Rebalance Step 2: Skew current_node, right_node, right_right_node
-		 */
-		_backend_skew(current_ptr);
-		_backend_skew(current_node + 2);
-		if (right_node != NULL) {
-			_backend_skew(right_node + 2);
-		}
-
-		/*
-		 * Rebalance Step 3: Skew current_node, right_node
-		 */
-		_backend_split(current_ptr);
-		_backend_split(current_node + 2);
-	}
-}
-
-/*
- * _backend_remove_unbalanced: Remove given node from tree and return
- *     This method does not rebalance tree
- */
-inline size_t* _backend_remove_unbalanced(size_t* current_ptr) {
-	size_t* current_node = _backend_node(current_ptr);
-
-	// First find node to replace the node
-	size_t* replace_ptr;
-	size_t* next_ptr = current_node + 1;
-	size_t* next_node = _backend_node(next_ptr);
-
-	if (next_node != NULL) {
-		// When we have left child,
-		// the successor node is the node to be replaced with current_node
-		replace_ptr = _backend_nearest(next_ptr, 0);
-	} else {
-		// When we don't have left child
-		next_ptr = current_node + 2;
-		next_node = _backend_node(next_ptr);
-
-		if (next_node != NULL) {
-			// If we only have right child,
-			// the predecessor node is the node to be replaced with current_node
-			replace_ptr = _backend_nearest(next_ptr, 1);
-		} else {
-			// current_node is a leaf node and can be safely deleted
-			replace_ptr = NULL;
-		}
-	}
-
-	size_t* replace_node = NULL;
-	if (replace_ptr != NULL) {
-		// If we have to replace current_node with another node,
-
-		// save it and
-		replace_node = _backend_node(replace_ptr);
-
-		// remove the node (with only one child or not) from the tree
-		size_t* new_replace_node = NULL;
-
-		if (replace_node != NULL) {
-			size_t* replace_left_node = _backend_left(replace_node);
-			if (replace_left_node != NULL) {
-				// If it has a left child, remove by replacing it with the child
-				new_replace_node = replace_left_node;
-			} else {
-				// If it has a right child, remove by replacing it with the child
-				// If it has no child, remove by replacing it with null
-				new_replace_node = _backend_right(replace_node);
-			}
-		}
-
-		*replace_ptr = ((size_t) new_replace_node) | ((*replace_ptr) & 0x7);
-		*(replace_node + 1) = *(current_node + 1);
-		*(replace_node + 2) = *(current_node + 2);
-	}
-
-	// Replace the pointer to current_node, with the pointer to replace_node
-	*current_ptr = ((size_t) replace_node) | ((*current_ptr) & 0x7);
-
-	return current_node;
-}
-
-/*
- * backend_remove: Remove and return given node
+ * backend_remove: Remove and return remain node
  *     If there's no such node, return null
  */
-size_t _backend_remove_size;
-size_t* _backend_remove_target;
-size_t* _backend_remove(size_t* current_ptr) {
-	// Get current iterating node
-	size_t* current_node = _backend_node(current_ptr);
-
-	if (current_node == NULL) {
+Node* _backend_remove(Node* current_node, Node* target_node) {
+	// Base case
+	if (current_node == NULL)
 		return NULL;
-	}
 
 	// Get size of iterating node
-	size_t current_size = (*current_node) & ~0x7;
+	size_t current_size = _backend_size(current_node);
+	BACKEND_DEBUG_PRINT("Remove! %d\n", current_size);
+
+	// The node to be replaced with current_node
+	Node* next_node = current_node;
 
 	// Descend to left or right
-	size_t* next_node;
-	if (_backend_remove_size < current_size) {
+	if (_backend_size(target_node) < current_size) {
 		// Descend to left
-		next_node = _backend_remove(current_node + 1);
-	} else if (_backend_remove_size > current_size) {
+		current_node->child_l = _backend_remove(current_node->child_l, target_node);
+	} else if (_backend_size(target_node) > current_size) {
 		// Descend to right
-		next_node = _backend_remove(current_node + 2);
+		current_node->child_r = _backend_remove(current_node->child_r, target_node);
 	} else {
 		// Same size. From now, we sort by address
-		if (_backend_remove_target > current_node) {
+		if (target_node > current_node) {
 			// Descend to right
-			next_node = _backend_remove(current_node + 2);
-		} else if (_backend_remove_target < current_node) {
+			current_node->child_r = _backend_remove(current_node->child_r, target_node);
+		} else if (target_node < current_node) {
 			// Descend to left
-			next_node = _backend_remove(current_node + 1);
+			current_node->child_l = _backend_remove(current_node->child_l, target_node);
 		} else {
 			// Found the value
 
 			// Remove it
-			_backend_remove_unbalanced(current_ptr);
-			next_node = current_node;
+			if (current_node->child_l && current_node->child_r) {
+				BACKEND_DEBUG_PRINT("Remove > Full case\n");
+				Node* successor = _backend_successor(current_node->child_r);
+				Node* remain = _backend_remove(current_node->child_r, successor);
+
+				// Replace current with successor
+				successor->child_l = current_node->child_l;
+				successor->child_r = remain;
+
+				next_node = successor;
+			} else {
+				if (current_node->child_l) {
+					BACKEND_DEBUG_PRINT("Remove > Left case\n");
+					// Only left node
+					next_node = current_node->child_l;
+				} else if (current_node->child_r) {
+					BACKEND_DEBUG_PRINT("Remove > Right case\n");
+					// Only right node
+					next_node = current_node->child_r;
+				} else {
+					BACKEND_DEBUG_PRINT("Remove > Leaf case\n");
+					// Leaf node
+					return NULL;
+				}
+			}
 		}
 	}
 
 	// Rebalance current level
-	_backend_remove_rebalance(current_ptr);
-	return next_node;
+	_backend_update_height(next_node);
+
+	int where = _backend_factor(next_node) > 1 ?
+		(next_node->child_l ? (_backend_factor(next_node->child_l) < 0 ? 1 : 0) : 0) :
+		(next_node->child_r ? (_backend_factor(next_node->child_r) <= 0 ? 1 : 0) : 0);
+
+	return _backend_rebalance(next_node, where);
 }
 
-inline size_t* backend_remove(size_t* target_node) {
+inline void backend_remove(Node* target_node) {
 	if (target_node == NULL)
-		return target_node;
+		return;
 
-	_backend_remove_size = (*target_node) & ~0x7;
-	_backend_remove_target = target_node;
-	return _backend_remove((size_t*) &root);
+	root = _backend_remove(root, target_node);
 }
 
 /*
@@ -448,41 +344,36 @@ inline size_t* backend_remove(size_t* target_node) {
  *     Remove and return the node
  *     If the find fails, returns null
  */
-size_t _backend_pop_size;
-size_t* _backend_pop(size_t* current_ptr) {
-	// Get current iterating node
-	size_t* current_node = _backend_node(current_ptr);
-
+Node* _backend_pop(Node* current_node, Node** return_node, size_t target_size) {
+	// Base case
 	if (current_node == NULL) {
 		return NULL;
 	}
 
 	// Get size of iterating node
-	size_t current_size = (*current_node) & ~0x7;
+	size_t current_size = _backend_size(current_node);
 	BACKEND_DEBUG_PRINT("Iterate! %d\n", current_size);
 
-	// The node to be returned
-	size_t* next_node;
+	// The node to be replaced with current_node
+	Node* next_node = current_node;
 
-	if (_backend_pop_size <= current_size) {
+	if (target_size <= current_size) {
 		// When the result is in the left node or current_node
 
 		// Calculate left node
-		size_t* next_ptr = current_node + 1;
-		next_node = _backend_node(next_ptr);
 		int is_current = 0;
 
-		if (next_node != NULL) {
+		if (current_node->child_l != NULL) {
 			// If we have left child, first descend to left child
 			BACKEND_DEBUG_PRINT("Left > ");
-			size_t* retval = _backend_pop(next_ptr);
+			Node* retval = _backend_pop(current_node->child_l, return_node, target_size);
 
-			if (retval == NULL) {
+			if ((*return_node) == NULL) {
 				// If we cannot find closer candidate, the result is current_node
 				is_current = 1;
 			} else {
 				// If we have found closer candidate, the result is returned value
-				next_node = retval;
+				current_node->child_l = retval;
 			}
 		} else {
 			// If we don't have any left child, the result is current_node
@@ -493,67 +384,107 @@ size_t* _backend_pop(size_t* current_ptr) {
 			// If the result is current_node
 			BACKEND_DEBUG_PRINT("Found! %d\n", current_size);
 
-			// Remove and return current_node
-			next_node = _backend_remove_unbalanced(current_ptr);
+			// Change to remove mode for further iteration
+			next_node = _backend_remove(current_node, current_node);
+			*return_node = current_node;
 		}
 	} else {
 		// When the result is in the right node
-		size_t* next_ptr = current_node + 2;
-		next_node = _backend_node(next_ptr);
-
-		if (next_node != NULL) {
+		if (current_node->child_r != NULL) {
 			BACKEND_DEBUG_PRINT("Right > ");
-			next_node = _backend_pop(next_ptr);
+			Node* retval = _backend_pop(current_node->child_l, return_node, target_size);
 
-			if (next_node == NULL)
-				return NULL;
+			if ((*return_node) == NULL) {
+				// Couldn't find in right
+				BACKEND_DEBUG_PRINT("Not-Found //\n");
+				return current_node;
+			}
+
+			// Found in right
+			current_node->child_r = retval;
 		} else {
-			BACKEND_DEBUG_PRINT("Not-Found //\n");
 			// As there's no right node, we couldn't find
-			return NULL;
+			BACKEND_DEBUG_PRINT("Not-Found //\n");
+			return current_node;
 		}
 	}
 
-	// Rebalance the tree of current level
-	_backend_remove_rebalance(current_ptr);
-	BACKEND_DEBUG_PRINT("Rebalance > Done...\n");
 
-	return next_node;
+	if (next_node == NULL)
+		return next_node;
+
+	// Rebalance the tree of current level
+	_backend_update_height(next_node);
+
+	int where = _backend_factor(next_node) > 1 ?
+		(next_node->child_l ? (_backend_factor(next_node->child_l) < 0 ? 1 : 0) : 0) :
+		(next_node->child_r ? (_backend_factor(next_node->child_r) <= 0 ? 1 : 0) : 0);
+
+	return _backend_rebalance(next_node, where);
 }
 
-inline size_t* backend_pop(size_t size) {
-	_backend_pop_size = size;
-	return _backend_pop((size_t*) &root);
+inline Node* backend_pop(size_t size) {
+	Node* return_node;
+	root = _backend_pop(root, &return_node, size);
+
+	return return_node;
 }
 
 /*
  * backend_debug: Prints preorder traversal result
  */
-void _backend_debug(size_t* node, int lvl) {
-	for (int i = 0; i < lvl; i++)
-		BACKEND_DEBUG_PRINT(" ");
+int _backend_debug(Node* node, int lvl, int print) {
+	// Looking for the blitz loop this planet to search way...
+	if (print)
+		for (int i = 0; i < lvl; i++)
+			BACKEND_DEBUG_PRINT(" ");
 
 	if (node == NULL) {
-		BACKEND_DEBUG_PRINT("()\n");
-		return;
+		if (print)
+			BACKEND_DEBUG_PRINT("()\n");
+		return 0;
 	}
 
-	BACKEND_DEBUG_PRINT("NODE %d: %d (\n", *(node) & ~0x7, lvl);
-	_backend_debug(_backend_left(node), lvl + 1);
-	_backend_debug(_backend_right(node), lvl + 1);
+	if (node == node->child_l) {
+		return -1;
+	}
 
-	for (int i = 0; i < lvl; i++)
-		BACKEND_DEBUG_PRINT(" ");
+	if (node == node->child_r) {
+		return -1;
+	}
 
-	BACKEND_DEBUG_PRINT(")\n");
+	int size = 1;
+	if (print)
+		BACKEND_DEBUG_PRINT("NODE %d: %d (\n", _backend_size(node), lvl);
+
+	int output = _backend_debug(node->child_l, lvl + 1, print);
+	if (output < 0) return -1;
+	size += output;
+
+	output = _backend_debug(node->child_r, lvl + 1, print);
+	if (output < 0) return -1;
+	size += output;
+
+	if (print) {
+		for (int i = 0; i < lvl; i++)
+			BACKEND_DEBUG_PRINT(" ");
+
+		BACKEND_DEBUG_PRINT(")\n");
+	}
+	return size;
 }
 
 #ifdef BACKEND_DEBUG
-void backend_debug(void) {
-	_backend_debug(root, 0);
+int backend_debug(void) {
+	return _backend_debug(root, 0, 1);
+}
+
+int backend_debug_silent(void) {
+	return _backend_debug(root, 0, 0);
 }
 #else
-inline void backend_debug(void) {}
+inline int backend_debug(void) { return 0; }
+inline int backend_debug_silent(void) { return 0; }
 #endif
 
 

@@ -2,26 +2,26 @@
 #include <time.h>
 #include "mm.c"
 
-size_t add(int count, size_t size, size_t** ptr) {
+size_t add(int count, size_t size, Node** ptr) {
 	size = ALIGN(size);
-	printf("Alloc (%zd)", size);
+	printf("Alloc (%u)", size);
 	fflush(stdout);
 
-	size_t* node = malloc(size);
+	Node* node = malloc(size);
 
-	*node = (size & ~0x7);
-	*(node + 1) = 0;
-	*(node + 2) = 0;
+	node->size = (size & ~0x7);
+	node->child_l = NULL;
+	node->child_r = NULL;
 	*(((size_t*) (((char*) node) + size)) - 1) = (size & ~0x7);
 
-	printf("[%d]: %zd\n", count, size);
+	printf("[%d]: %u\n", count, size);
 	backend_add(node);
 
 	*ptr = node;
 	return size;
 }
 
-size_t random_add(int count, size_t** ptr) {
+size_t random_add(int count, Node** ptr) {
 	return add(count, rand() % 1020 + 24, ptr);
 }
 
@@ -30,36 +30,32 @@ int main(void) {
 	// backend_debug();
 
 	size_t sizes[378];
-	size_t* ptrs[378];
+	Node* ptrs[378];
 	for (int i = 0; i < 378; i++) {
-		//sizes[i] = random_add(i, &ptrs[i]);
-		add(i, i + BACKEND_MIN_SIZE, &ptrs[i]);
+		// sizes[i] = random_add(i, &ptrs[i]);
+		sizes[i] = add(i, i + BACKEND_MIN_SIZE, &ptrs[i]);
 	}
 
-	backend_debug();
-
 	for (int i = 0; i < 378; i++) {
-		printf("Find: %zd\n", sizes[i]);
+		printf("Find: %u\n", sizes[i]);
 		if (rand() % 10 < 5) {
-			size_t* node = backend_pop(sizes[i]);
+			Node* node = backend_pop(sizes[i]);
 			if (node == NULL) {
-				printf("Failed to pop!: %zd\n", sizes[i]);
+				printf("Failed to pop!: %u\n", sizes[i]);
 				backend_debug();
 				return 1;
 			}
 
-			size_t node_size = (*node) & ~0x7;
-			printf("Pop [%d]: %zd => %zd\n", i, sizes[i], node_size);
+			size_t node_size = _backend_size(node);
+			printf("Pop [%d]: %u => %u\n", i, sizes[i], node_size);
 		} else {
-			size_t* node = backend_remove(ptrs[i]);
-			if (node == NULL) {
-				printf("Failed to remove!: %zd\n", sizes[i]);
-				backend_debug();
-				return 1;
-			}
-
-			size_t node_size = (*node) & ~0x7;
-			printf("Remove [%d]: %zd => %zd\n", i, sizes[i], node_size);
+			backend_remove(ptrs[i]);
+			printf("Remove [%d]: %u\n", i, sizes[i]);
+		}
+		if (backend_debug_silent() < 0) {
+			printf("Loop Detected!\n");
+			backend_debug();
+			exit(1);
 		}
 	}
 
