@@ -75,6 +75,8 @@
 #define SIZE_T_SIZE_PAD (ALIGN(SIZE_T_SIZE) - SIZE_T_SIZE)
 #define SIZE_T_SIZE_PADDED ALIGN(SIZE_T_SIZE)
 
+void* heap;
+
 /*
  * Backend
  * ====
@@ -90,7 +92,7 @@ typedef struct _Node {
 } Node;
 
 #define BACKEND_MIN_SIZE (ALIGN(sizeof(Node)) + SIZE_T_SIZE_PADDED)
-Node* root;
+size_t* root_start;
 
 /*
  * _backend_factor: Get balance factor
@@ -184,8 +186,40 @@ inline Node* _backend_rebalance(Node* node, int where) {
 	return node;
 }
 
-inline void backend_init(void) {
-	root = NULL;
+void backend_init(void) {
+	/*
+	 * 0: 0 ~ 32,
+	 * 1: 32 ~ 128,
+	 * 2: 128 ~ 512,
+	 * 3: 512 ~ 2048,
+	 * 4: 2048 ~ 8192,
+	 * 5: 8192 ~ 32768,
+	 * 6: 32768 ~ 131072
+	 * 7: 131072 ~
+	*/
+	size_t backend_header_size = ALIGN(SIZE_T_SIZE * 8);
+	mem_sbrk(backend_header_size);
+
+	root_start = (size_t*) heap;
+	for (int i = 0; i < 8; i++) {
+		*(root_start + i) = (size_t) NULL;
+	}
+
+	BACKEND_DEBUG_PRINT("Allocate for root initializing: %u", backend_header_size);
+	heap = ((char*) heap) + backend_header_size;
+}
+
+int _backend_get_class(size_t size) {
+	int class = 0;
+	while (size > 32) {
+		size /= 4;
+		class++;
+
+		if (class >= 7)
+			break;
+	}
+
+	return class;
 }
 
 /*
@@ -230,17 +264,20 @@ Node* _backend_add(Node* current_node, size_t node_size, int* where) {
 	return _backend_rebalance(current_node, my_where);
 }
 
-inline void backend_add(size_t* node_raw) {
+void backend_add(size_t* node_raw) {
 	Node* node = (Node*) node_raw;
 	size_t node_size = _backend_size(node);
 	node->height = 0;
 	node->child_l = NULL;
 	node->child_r = NULL;
 
-	_backend_add_node = node;
+	int class = _backend_get_class(node_size);
+	Node** root = (Node**) (root_start + class);
+	BACKEND_DEBUG_PRINT("Adding to class %d\n", class);
 
 	int where;
-	root = _backend_add(root, node_size, &where);
+	_backend_add_node = node;
+	*root = _backend_add(*root, node_size, &where);
 	BACKEND_DEBUG_PRINT("Done add!\n");
 }
 
@@ -338,11 +375,17 @@ Node* _backend_remove(Node* current_node, Node* target_node) {
 	return _backend_rebalance(next_node, where);
 }
 
-inline void backend_remove(size_t* target_node) {
+void backend_remove(size_t* target_node) {
 	if (target_node == NULL)
 		return;
 
-	root = _backend_remove(root, (Node*) target_node);
+	size_t size = _backend_size((Node*) target_node);
+	int class = _backend_get_class(size);
+	Node** root = (Node**) (root_start + class);
+
+	BACKEND_DEBUG_PRINT("Deleting from class %d\n", class);
+
+	*root = _backend_remove(*root, (Node*) target_node);
 	BACKEND_DEBUG_PRINT("Done remove!\n");
 }
 
@@ -429,12 +472,23 @@ Node* _backend_pop(Node* current_node, Node** return_node, size_t target_size) {
 	return _backend_rebalance(next_node, where);
 }
 
-inline size_t* backend_pop(size_t size) {
-	Node* return_node = NULL;
-	root = _backend_pop(root, &return_node, size);
+size_t* backend_pop(size_t target_size) {
+	int class = _backend_get_class(target_size);
+	BACKEND_DEBUG_PRINT("Finding %u in class %d\n", target_size, class);
 
-	BACKEND_DEBUG_PRINT("Done pop!\n");
-	return (size_t*) return_node;
+	for (; class < 8; class++) {
+		Node** root = (Node**) (root_start + class);
+		Node* target_node = NULL;
+
+		*root = _backend_pop(*root, &target_node, target_size);
+
+		if (target_node != NULL) {
+			BACKEND_DEBUG_PRINT("Found in class %d: %u\n", class, (size_t) target_node);
+			return (size_t*) target_node;
+		}
+	}
+
+	return NULL;
 }
 
 /*
@@ -502,8 +556,6 @@ inline int backend_debug_silent(void) { return 0; }
  * A malloc, free, realloc implementation
  */
 
-void* heap;
-
 /*
  * _mm_header: Get the header of given node by its footer and size
  */
@@ -569,7 +621,7 @@ void *mm_malloc(size_t size) {
 		// Calculate body size
 		body_size = claim_size - 2 * SIZE_T_SIZE_PADDED;
 
-		if (mem_heapsize() > 0) {
+		if (claim_start > heap) {
 			MM_DEBUG_PRINT("Coalesce with left!\n");
 			// Try to coalesce with previous memory
 			size_t* footer = (size_t*) (((char*) claim_start) - SIZE_T_SIZE);
