@@ -19,7 +19,7 @@ ftimer.o: ftimer.c ftimer.h config.h
 clock.o: clock.c clock.h
 
 backend_test.o: mm.c mm.h backend_test.c memlib.h
-	$(CC) -D BACKEND_DEBUG $(CFLAGS) -o backend_test.o -c backend_test.c
+	$(CC) $(CFLAGS) -o backend_test.o -c backend_test.c
 
 backend_test: backend_test.o memlib.o
 	$(CC) $(CFLAGS) -o backend_test backend_test.o memlib.o

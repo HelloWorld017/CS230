@@ -120,6 +120,8 @@ inline size_t _backend_size(Node* node) {
 inline Node* _backend_rotate_left(Node* node) {
 	// Get right node from node
 	Node* right_node = node->child_r;
+	if (right_node == NULL)
+		return node;
 
 	// (right of node) is (left of right_node)
 	node->child_r = right_node->child_l;
@@ -138,6 +140,8 @@ inline Node* _backend_rotate_left(Node* node) {
 inline Node* _backend_rotate_right(Node* node) {
 	// Get left node from node
 	Node* left_node = node->child_l;
+	if (left_node == NULL)
+		return node;
 
 	// (left of node) is (right of left_node)
 	node->child_l = left_node->child_r;
@@ -155,8 +159,6 @@ inline Node* _backend_rotate_right(Node* node) {
  *     Make one level of the tree, which balance is broken, as a balanced
  */
 inline Node* _backend_rebalance(Node* node, int where) {
-	if (where == -1) return node;
-
 	BACKEND_DEBUG_PRINT("Rebalance!\n");
 	int factor = _backend_factor(node);
 	if (factor > 1) {
@@ -200,7 +202,7 @@ Node* _backend_add(Node* current_node, size_t node_size, int* where) {
 	size_t current_size = _backend_size(current_node);
 	BACKEND_DEBUG_PRINT("Add %u\n", current_size);
 
-	int my_where = -1;
+	int my_where;
 
 	// Decide where to descend
 	// > Sort by size, then sort by address
@@ -224,6 +226,7 @@ Node* _backend_add(Node* current_node, size_t node_size, int* where) {
 		}
 	}
 
+	_backend_update_height(current_node);
 	return _backend_rebalance(current_node, my_where);
 }
 
