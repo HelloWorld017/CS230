@@ -4,8 +4,6 @@
 
 CC = gcc
 CFLAGS = -Wall -O2 -m32
-# For gprof
-# CFLAGS = -Wall -O2 -m32 -pg
 
 OBJS = mdriver.o mm.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
@@ -20,17 +18,23 @@ fcyc.o: fcyc.c fcyc.h
 ftimer.o: ftimer.c ftimer.h config.h
 clock.o: clock.c clock.h
 
-backend_test.o: mm.c mm.h backend_test.c
+backend_test.o: mm.c mm.h backend_test.c memlib.h
 	$(CC) -D BACKEND_DEBUG $(CFLAGS) -o backend_test.o -c backend_test.c
 
-backend_test: backend_test.o
-	$(CC) $(CFLAGS) -o backend_test backend_test.o
+backend_test: backend_test.o memlib.o
+	$(CC) $(CFLAGS) -o backend_test backend_test.o memlib.o
 
 mm_test.o: mm.c mm.h memlib.h
 	$(CC) -D MM_DEBUG $(CFLAGS) -o mm_test.o -c mm.c
 
 mm_test: mdriver.o mm_test.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 	$(CC) $(CFLAGS) -o mm_test mdriver.o mm_test.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
+
+mm_prof.o: mm.c mm.h memlib.h
+	$(CC) -pg $(CFLAGS) -o mm_prof.o -c mm.c
+
+mm_prof: mdriver.o mm_prof.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
+	$(CC) -pg $(CFLAGS) -o mm_prof mdriver.o mm_prof.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
 handin:
 	git tag -a -f submit -m "Submitting Lab"

@@ -2,8 +2,8 @@
 #include <time.h>
 #include "mm.c"
 
-size_t random_add(int count, size_t** ptr) {
-	size_t size = ALIGN(rand() % 1020 + 24);
+size_t add(int count, size_t size, size_t** ptr) {
+	size = ALIGN(size);
 	printf("Alloc (%zd)", size);
 	fflush(stdout);
 
@@ -21,6 +21,10 @@ size_t random_add(int count, size_t** ptr) {
 	return size;
 }
 
+size_t random_add(int count, size_t** ptr) {
+	return add(count, rand() % 1020 + 24, ptr);
+}
+
 int main(void) {
 	backend_init();
 	// backend_debug();
@@ -28,10 +32,11 @@ int main(void) {
 	size_t sizes[378];
 	size_t* ptrs[378];
 	for (int i = 0; i < 378; i++) {
-		sizes[i] = random_add(i, &ptrs[i]);
+		//sizes[i] = random_add(i, &ptrs[i]);
+		add(i, i + BACKEND_MIN_SIZE, &ptrs[i]);
 	}
 
-	// backend_debug();
+	backend_debug();
 
 	for (int i = 0; i < 378; i++) {
 		printf("Find: %zd\n", sizes[i]);

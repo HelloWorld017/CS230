@@ -438,7 +438,7 @@ size_t* _backend_remove(size_t* current_ptr) {
 	}
 
 	// Rebalance current level
-	_backend_remove_rebalance(current_ptr);
+	// _backend_remove_rebalance(current_ptr);
 	return next_node;
 }
 
@@ -523,7 +523,7 @@ size_t* _backend_pop(size_t* current_ptr) {
 	}
 
 	// Rebalance the tree of current level
-	_backend_remove_rebalance(current_ptr);
+	// _backend_remove_rebalance(current_ptr);
 	BACKEND_DEBUG_PRINT("Rebalance > Done...\n");
 
 	return next_node;
@@ -546,7 +546,7 @@ void _backend_debug(size_t* node, int lvl) {
 		return;
 	}
 
-	BACKEND_DEBUG_PRINT("NODE %d (\n", *(node) & ~0x7);
+	BACKEND_DEBUG_PRINT("NODE %d: %d (\n", *(node) & ~0x7, lvl);
 	_backend_debug(_backend_left(node), lvl + 1);
 	_backend_debug(_backend_right(node), lvl + 1);
 
@@ -556,11 +556,13 @@ void _backend_debug(size_t* node, int lvl) {
 	BACKEND_DEBUG_PRINT(")\n");
 }
 
+#ifdef BACKEND_DEBUG
 void backend_debug(void) {
-	#ifdef BACKEND_DEBUG
 	_backend_debug(root, 0);
-	#endif
 }
+#else
+inline void backend_debug(void) {}
+#endif
 
 
 /*
@@ -572,8 +574,30 @@ void backend_debug(void) {
 
 void* heap;
 
+/*
+ * _mm_header: Get the header of given node by its footer and size
+ */
+inline size_t* _mm_header(size_t* footer, size_t body_size) {
+	return (size_t*) (((char*) footer) - body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED);
+}
+
+/*
+ * _mm_footer: Get the footer of given node by its header and size
+ */
+inline size_t* _mm_footer(size_t* header, size_t body_size) {
+	return (size_t*) (((char*) header) + SIZE_T_SIZE_PADDED + body_size + SIZE_T_SIZE_PAD);
+}
+
+/*
+ * _mm_as_leaf: Delete children of given node and make it as a leaf node by its header
+ */
+inline void _mm_as_leaf(size_t* header) {
+	*(header + 1) = ((size_t) NULL) & ~0x7;
+	*(header + 2) = ((size_t) NULL) & ~0x7;
+}
+
 /* 
- * mm_init - initialize the malloc package
+ * mm_init: Initialize the malloc package
  */
 int mm_init(void) {
 	// Initialize memlib
@@ -631,7 +655,7 @@ void *mm_malloc(size_t size) {
 				claim_size -= prev_body_size + 2 * SIZE_T_SIZE_PADDED;
 
 				// Calculate pointer to node and remove
-				size_t* header = (size_t*) (((char*) footer) - prev_body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED);
+				size_t* header = _mm_header(footer, prev_body_size);
 				backend_remove(header);
 
 				claim_start = header;
@@ -663,19 +687,18 @@ void *mm_malloc(size_t size) {
 			size_t next_body_size = allocated_node_size - node_size - 2 * SIZE_T_SIZE_PADDED;
 
 			// Assign size to header of next node
-			size_t* next_start = (size_t*) (((char*) allocated) + node_size);
-			*next_start = ((next_body_size) & ~0x7);
+			size_t* next_header = (size_t*) (((char*) allocated) + node_size);
+			*next_header = ((next_body_size) & ~0x7);
 
 			// Assign size to footer of next node
-			size_t* next_footer = (size_t*) (((char*) next_start) + SIZE_T_SIZE_PADDED + next_body_size + SIZE_T_SIZE_PAD);
+			size_t* next_footer = _mm_footer(next_header, next_body_size);
 			*next_footer = ((next_body_size) & ~0x7);
 
 			// Delete children
-			*(next_start + 1) = ((size_t) NULL) & ~0x7;
-			*(next_start + 2) = ((size_t) NULL) & ~0x7;
+			_mm_as_leaf(next_header);
 
 			// Index next node to the tree
-			backend_add(next_start);
+			backend_add(next_header);
 		}
 	}
 
@@ -711,7 +734,7 @@ void mm_free(void *ptr) {
 
 	MM_DEBUG_PRINT("Found Size: %d\n", body_size);
 
-	size_t* footer = (size_t*) (((char*) header) + SIZE_T_SIZE_PADDED + body_size + SIZE_T_SIZE_PAD);
+	size_t* footer = _mm_footer(header, body_size);
 
 	if (header > (size_t*) heap) {
 		// Check for coalesce with previous node
@@ -723,7 +746,7 @@ void mm_free(void *ptr) {
 
 			// When previous node can be coalesced
 			size_t previous_body_size = previous_footer_content & ~0x7;
-			size_t* previous_header = (size_t*) (((char*) previous_footer) - SIZE_T_SIZE_PAD - previous_body_size - SIZE_T_SIZE_PADDED);
+			size_t* previous_header = _mm_header(previous_footer, previous_body_size);
 
 			// Remove previous node from tree
 			backend_remove(previous_header);
@@ -748,7 +771,7 @@ void mm_free(void *ptr) {
 
 			// When next node can be coalesced
 			size_t next_body_size = next_header_content & ~0x7;
-			size_t* next_footer = (size_t*) (((char*) next_header) + SIZE_T_SIZE_PADDED + next_body_size + SIZE_T_SIZE_PAD);
+			size_t* next_footer = _mm_footer(next_header, next_body_size);
 
 			// Remove next node from tree
 			backend_remove(next_header);
@@ -768,8 +791,7 @@ void mm_free(void *ptr) {
 	*footer = body_size & ~0x7;
 
 	MM_DEBUG_PRINT("Write Children\n");
-	*(header + 1) = ((size_t) NULL) & ~0x7;
-	*(header + 2) = ((size_t) NULL) & ~0x7;
+	_mm_as_leaf(header);
 
 	backend_add(header);
 	backend_debug();
@@ -777,20 +799,90 @@ void mm_free(void *ptr) {
 }
 
 /*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+ * mm_realloc: Reallocate the memory
+ * > If the next node is empty, malloc it and merge
+ * > If not, malloc and free
  */
-void *mm_realloc(void *ptr, size_t size) {
-	void *oldptr = ptr;
-	void *newptr;
-	size_t copySize;
+void *mm_realloc(void *old_allocation, size_t new_size) {
+	MM_DEBUG_PRINT("==== Realloc (%u) | [%u] ====\n", (size_t) old_allocation, new_size);
 
-	newptr = mm_malloc(size);
-	if(newptr == NULL)
-		return NULL;
-	copySize = *((size_t*) (((char*) oldptr) - SIZE_T_SIZE_PADDED)) & ~0x7;
-	if(size < copySize)
-		copySize = size;
-	memcpy(newptr, oldptr, copySize);
-	mm_free(oldptr);
-	return newptr;
+	size_t* header = (size_t*) (((char*) old_allocation) - SIZE_T_SIZE_PADDED);
+	size_t old_size = (*header) & ~0x7;
+	new_size = ALIGN(new_size);
+
+	MM_DEBUG_PRINT("Size: %u => %u\n", old_size, new_size);
+
+	if (new_size > old_size) {
+		// Check for coalesce with next node when growing allocated memory
+		size_t* footer = _mm_footer(header, old_size);
+		if (footer < (size_t*) (((char*) mem_heap_hi() + 1) - SIZE_T_SIZE_PAD)) {
+			size_t* next_header = footer + 1;
+			size_t next_header_content = *next_header;
+
+			if (!(next_header_content & 0x7)) {
+				MM_DEBUG_PRINT("Coalesce with Right!\n");
+
+				// When next node can be coalesced
+				size_t next_body_size = next_header_content & ~0x7;
+				size_t* next_footer = _mm_footer(next_header, next_body_size);
+
+				// Remove next node from tree
+				backend_remove(next_header);
+
+				// Assign merged node's footer with merged size
+				old_size += next_body_size + 2 * SIZE_T_SIZE_PADDED;
+				footer = next_footer;
+				*footer = (old_size & ~0x7) | 0x1;
+
+				// Assign merged node's header with merged size
+				*header = (old_size & ~0x7) | 0x1;
+			}
+		}
+	}
+
+	if (new_size + BACKEND_MIN_SIZE < old_size) {
+		// When some part is left and can be split
+		MM_DEBUG_PRINT("Split left space!\n");
+
+		// Calculate body size of next node
+		size_t next_body_size = old_size - new_size - 2 * SIZE_T_SIZE_PADDED;
+		MM_DEBUG_PRINT("Split result: %u => %u + %u\n", old_size, new_size, next_body_size);
+		old_size = new_size;
+
+		// Assign shrinked size
+		size_t* footer = _mm_footer(header, old_size);
+		*header = ((new_size) & ~0x7) | 0x1;
+		*footer = ((new_size) & ~0x7) | 0x1;
+
+		// Assign size to header of next node
+		size_t* next_header = footer + 1;
+		*next_header = ((next_body_size) & ~0x7);
+
+		// Assign size to footer of next node
+		size_t* next_footer = _mm_footer(next_header, next_body_size);
+		*next_footer = ((next_body_size) & ~0x7);
+
+		// Delete children
+		_mm_as_leaf(next_header);
+		MM_DEBUG_PRINT("Header %u\n", *(next_header));
+		MM_DEBUG_PRINT("ChildL %u\n", *(next_header + 1));
+		MM_DEBUG_PRINT("ChildR %u\n", *(next_header + 2));
+
+		// Index next node to the tree
+		backend_add(next_header);
+	}
+
+	if (old_size < new_size) {
+		// Allocate new memory if not available
+		MM_DEBUG_PRINT("Mode: malloc-and-free\n");
+
+		void* new_allocation = mm_malloc(new_size);
+		memcpy(new_allocation, old_allocation, old_size);
+		mm_free(old_allocation);
+
+		return new_allocation;
+	} else {
+		MM_DEBUG_PRINT("Mode: reuse\n");
+		return old_allocation;
+	}
 }
