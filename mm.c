@@ -49,7 +49,6 @@
 #include "mm.h"
 #include "memlib.h"
 
-#define BACKEND_DEBUG 1
 #ifdef BACKEND_DEBUG
 	#define BACKEND_DEBUG_PRINT(fmt, args...) printf(fmt, ##args)
 #else
@@ -70,7 +69,7 @@
 
 
 #define SIZE_T_SIZE (sizeof(size_t))
-#define SIZE_T_SIZE_PAD ALIGN(SIZE_T_SIZE) - SIZE_T_SIZE
+#define SIZE_T_SIZE_PAD (ALIGN(SIZE_T_SIZE) - SIZE_T_SIZE)
 #define SIZE_T_SIZE_PADDED ALIGN(SIZE_T_SIZE)
 
 /*
@@ -195,6 +194,7 @@ void _backend_add(size_t* current_ptr) {
 
 	// If current node is null, assign and escape
 	if (current_node == NULL) {
+		BACKEND_DEBUG_PRINT("AddLeaf %d\n", *_backend_add_node & ~0x7);
 		*current_ptr = ((size_t) _backend_add_node) | ((*current_ptr) & 0x7);
 		return;
 	}
@@ -557,7 +557,9 @@ void _backend_debug(size_t* node, int lvl) {
 }
 
 void backend_debug(void) {
+	#ifdef BACKEND_DEBUG
 	_backend_debug(root, 0);
+	#endif
 }
 
 
@@ -629,7 +631,6 @@ void *mm_malloc(size_t size) {
 				claim_size -= prev_body_size + 2 * SIZE_T_SIZE_PADDED;
 
 				// Calculate pointer to node and remove
-				// FIXME Shouldn't it be (((char*) footer) - prev_body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED) ?
 				size_t* header = (size_t*) (((char*) footer) - prev_body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED);
 				backend_remove(header);
 
@@ -652,7 +653,7 @@ void *mm_malloc(size_t size) {
 		body_size = (*allocated) & ~0x7;
 
 		// Check if we can split the allocated node into two parts
-		size_t allocated_node_size = ALIGN(body_size + 2 * SIZE_T_SIZE_PADDED);
+		size_t allocated_node_size = ALIGN(body_size) + 2 * SIZE_T_SIZE_PADDED;
 
 		if (allocated_node_size > node_size + BACKEND_MIN_SIZE) {
 			// Shrink body size
@@ -662,7 +663,7 @@ void *mm_malloc(size_t size) {
 			size_t next_body_size = allocated_node_size - node_size - 2 * SIZE_T_SIZE_PADDED;
 
 			// Assign size to header of next node
-			size_t* next_start = (size_t*) ((char*) allocated) + node_size;
+			size_t* next_start = (size_t*) (((char*) allocated) + node_size);
 			*next_start = ((next_body_size) & ~0x7);
 
 			// Assign size to footer of next node
@@ -722,7 +723,6 @@ void mm_free(void *ptr) {
 
 			// When previous node can be coalesced
 			size_t previous_body_size = previous_footer_content & ~0x7;
-			// FIXME Shouldn't it be (size_t*) (((char*) previous_footer) - SIZE_T_SIZE_PAD - previous_body_size - SIZE_T_SIZE_PADDED);
 			size_t* previous_header = (size_t*) (((char*) previous_footer) - SIZE_T_SIZE_PAD - previous_body_size - SIZE_T_SIZE_PADDED);
 
 			// Remove previous node from tree
@@ -772,6 +772,7 @@ void mm_free(void *ptr) {
 	*(header + 2) = ((size_t) NULL) & ~0x7;
 
 	backend_add(header);
+	backend_debug();
 	MM_DEBUG_PRINT("Hello, my memory\n");
 }
 
@@ -786,7 +787,7 @@ void *mm_realloc(void *ptr, size_t size) {
 	newptr = mm_malloc(size);
 	if(newptr == NULL)
 		return NULL;
-	copySize = *(size_t * )((char *) oldptr - SIZE_T_SIZE);
+	copySize = *((size_t*) (((char*) oldptr) - SIZE_T_SIZE_PADDED)) & ~0x7;
 	if(size < copySize)
 		copySize = size;
 	memcpy(newptr, oldptr, copySize);
