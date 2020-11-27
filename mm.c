@@ -113,8 +113,6 @@ inline size_t* _backend_right(size_t* node) {
  * _backend_skew: Apply skew operation to given ptr
  */
 inline void _backend_skew(size_t* node_ptr) {
-	if (node_ptr == NULL) return;
-
 	// Get node from ptr
 	size_t* node = _backend_node(node_ptr);
 	if (node == NULL) return;
@@ -143,8 +141,6 @@ inline void _backend_skew(size_t* node_ptr) {
  * _backend_skew: Apply split operation to given ptr
  */
 inline void _backend_split(size_t* node_ptr) {
-	if (node_ptr == NULL) return;
-
 	// Get node from ptr
 	size_t* node = _backend_node(node_ptr);
 	if (node == NULL) return;
@@ -159,12 +155,11 @@ inline void _backend_split(size_t* node_ptr) {
 	// When right_right is same level with node
 	// (Two simultaneous horizontal connection)
 	int level = _backend_level(node);
-	int right_level = _backend_level(right_node);
 	int right_right_level = _backend_level(right_right_node);
 	if (level != right_right_level) return;
 
 	// Increase right level
-	right_level++;
+	int right_level = _backend_level(right_node) + 1;
 
 	// (Right child of node) is (Left child of right_node)
 	*(node + 2) = ((size_t) _backend_left(right_node)) | (level & 0x7);
@@ -186,9 +181,8 @@ inline void backend_init(void) {
 /*
  * backend_add: Add new node to the tree
  */
-size_t _backend_add_node_size;
 size_t* _backend_add_node;
-void _backend_add(size_t* current_ptr) {
+void _backend_add(size_t* current_ptr, size_t node_size) {
 	// Get iterating node
 	size_t* current_node = _backend_node(current_ptr);
 
@@ -206,10 +200,10 @@ void _backend_add(size_t* current_ptr) {
 
 	// Decide where to descend
 	// > Sort by size, then sort by address
-	if (_backend_add_node_size < current_size) {
-		next_ptr = current_node + 1;
-	} else if (_backend_add_node_size > current_size) {
+	if (node_size > current_size) {
 		next_ptr = current_node + 2;
+	} else if (node_size < current_size) {
+		next_ptr = current_node + 1;
 	} else {
 		if (_backend_add_node < current_node) {
 			next_ptr = current_node + 1;
@@ -218,7 +212,7 @@ void _backend_add(size_t* current_ptr) {
 		}
 	}
 
-	_backend_add(next_ptr);
+	_backend_add(next_ptr, node_size);
 
 	// Else, skew & split this node if available
 	_backend_skew(current_ptr);
@@ -226,9 +220,9 @@ void _backend_add(size_t* current_ptr) {
 }
 
 inline void backend_add(size_t* node) {
-	_backend_add_node_size = (*node) & ~0x7;
+	size_t node_size = (*node) & ~0x7;
 	_backend_add_node = node;
-	_backend_add((size_t*) &root);
+	_backend_add((size_t*) &root, node_size);
 }
 
 /*
@@ -269,9 +263,6 @@ inline size_t* _backend_nearest(size_t* node_ptr, int is_predecessor) {
  *     Make one level of the tree, which balance is broken by remove, as a balanced
  */
 void _backend_remove_rebalance(size_t* current_ptr) {
-	if (current_ptr == NULL)
-		return;
-
 	// Get current node
 	size_t* current_node = _backend_node(current_ptr);
 	if (current_node == NULL)
@@ -308,27 +299,28 @@ void _backend_remove_rebalance(size_t* current_ptr) {
 		*(current_node + 1) = (*(current_node + 1) & ~0x7) | ((target_level >> 3) & 0x7);
 		*(current_node + 2) = (*(current_node + 2) & ~0x7) | (target_level & 0x7);
 
-		if (right_node != NULL && (_backend_level(right_node) > target_level)) {
+		if (right_node != NULL && (right_level > target_level)) {
 			// When the level of right child is larger than target_level, shrink it to target_level
 			*(right_node + 1) = (*(right_node + 1) & ~0x7) | ((target_level >> 3) & 0x7);
 			*(right_node + 2) = (*(right_node + 2) & ~0x7) | (target_level & 0x7);
 		}
-	}
 
-	/*
-	 * Rebalance Step 2: Skew current_node, right_node, right_right_node
-	 */
-	_backend_skew(current_ptr);
-	_backend_skew(current_node + 2);
-	if (right_node != NULL) {
-		_backend_skew(right_node + 2);
-	}
 
-	/*
-	 * Rebalance Step 3: Skew current_node, right_node
-	 */
-	_backend_split(current_ptr);
-	_backend_split(current_node + 2);
+		/*
+		 * Rebalance Step 2: Skew current_node, right_node, right_right_node
+		 */
+		_backend_skew(current_ptr);
+		_backend_skew(current_node + 2);
+		if (right_node != NULL) {
+			_backend_skew(right_node + 2);
+		}
+
+		/*
+		 * Rebalance Step 3: Skew current_node, right_node
+		 */
+		_backend_split(current_ptr);
+		_backend_split(current_node + 2);
+	}
 }
 
 /*
@@ -422,12 +414,12 @@ size_t* _backend_remove(size_t* current_ptr) {
 		next_node = _backend_remove(current_node + 2);
 	} else {
 		// Same size. From now, we sort by address
-		if (_backend_remove_target < current_node) {
-			// Descend to left
-			next_node = _backend_remove(current_node + 1);
-		} else if (_backend_remove_target > current_node) {
+		if (_backend_remove_target > current_node) {
 			// Descend to right
 			next_node = _backend_remove(current_node + 2);
+		} else if (_backend_remove_target < current_node) {
+			// Descend to left
+			next_node = _backend_remove(current_node + 1);
 		} else {
 			// Found the value
 
@@ -438,7 +430,7 @@ size_t* _backend_remove(size_t* current_ptr) {
 	}
 
 	// Rebalance current level
-	// _backend_remove_rebalance(current_ptr);
+	_backend_remove_rebalance(current_ptr);
 	return next_node;
 }
 
@@ -523,7 +515,7 @@ size_t* _backend_pop(size_t* current_ptr) {
 	}
 
 	// Rebalance the tree of current level
-	// _backend_remove_rebalance(current_ptr);
+	_backend_remove_rebalance(current_ptr);
 	BACKEND_DEBUG_PRINT("Rebalance > Done...\n");
 
 	return next_node;

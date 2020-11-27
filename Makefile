@@ -31,10 +31,10 @@ mm_test: mdriver.o mm_test.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 	$(CC) $(CFLAGS) -o mm_test mdriver.o mm_test.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
 mm_prof.o: mm.c mm.h memlib.h
-	$(CC) -pg $(CFLAGS) -o mm_prof.o -c mm.c
+	$(CC) -pg -fprofile-arcs -ftest-coverage $(CFLAGS) -o mm_prof.o -c mm.c
 
 mm_prof: mdriver.o mm_prof.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
-	$(CC) -pg $(CFLAGS) -o mm_prof mdriver.o mm_prof.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
+	$(CC) -pg -fprofile-arcs -ftest-coverage $(CFLAGS) -o mm_prof mdriver.o mm_prof.o memlib.o fsecs.o fcyc.o clock.o ftimer.o
 
 handin:
 	git tag -a -f submit -m "Submitting Lab"
