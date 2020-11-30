@@ -97,14 +97,14 @@ size_t* root_start;
 /*
  * _backend_factor: Get balance factor
  */
-inline int _backend_factor(Node* node) {
+int _backend_factor(Node* node) {
 	int left_height = node->child_l ? node->child_l->height : 0;
 	int right_height = node->child_r ? node->child_r->height : 0;
 
 	return left_height - right_height;
 }
 
-inline void _backend_update_height(Node* node) {
+void _backend_update_height(Node* node) {
 	BACKEND_DEBUG_PRINT("Update height!\n");
 	int left_height = node->child_l ? node->child_l->height : 0;
 	int right_height = node->child_r ? node->child_r->height : 0;
@@ -112,14 +112,14 @@ inline void _backend_update_height(Node* node) {
 	node->height = (left_height < right_height ? right_height : left_height) + 1;
 }
 
-inline size_t _backend_size(Node* node) {
+size_t _backend_size(Node* node) {
 	return (node->size) & ~0x7;
 }
 
 /*
  * _backend_rotate_left: Apply left rotation operation to given node
  */
-inline Node* _backend_rotate_left(Node* node) {
+Node* _backend_rotate_left(Node* node) {
 	// Get right node from node
 	Node* right_node = node->child_r;
 	if (right_node == NULL)
@@ -139,7 +139,7 @@ inline Node* _backend_rotate_left(Node* node) {
 /*
  * _backend_rotate_right: Apply right rotation operation to given node
  */
-inline Node* _backend_rotate_right(Node* node) {
+Node* _backend_rotate_right(Node* node) {
 	// Get left node from node
 	Node* left_node = node->child_l;
 	if (left_node == NULL)
@@ -160,7 +160,7 @@ inline Node* _backend_rotate_right(Node* node) {
  * _backend_remove_rebalance:
  *     Make one level of the tree, which balance is broken, as a balanced
  */
-inline Node* _backend_rebalance(Node* node, int where) {
+Node* _backend_rebalance(Node* node, int where) {
 	BACKEND_DEBUG_PRINT("Rebalance!\n");
 	int factor = _backend_factor(node);
 	if (factor > 1) {
@@ -284,7 +284,7 @@ void backend_add(size_t* node_raw) {
 /*
  * _backend_successor: Find successor node
  */
-inline Node* _backend_successor(Node* current_node) {
+Node* _backend_successor(Node* current_node) {
 	if (current_node == NULL)
 		return NULL;
 
@@ -544,8 +544,8 @@ int backend_debug_silent(void) {
 	return _backend_debug(root, 0, 0);
 }
 #else
-inline int backend_debug(void) { return 0; }
-inline int backend_debug_silent(void) { return 0; }
+int backend_debug(void) { return 0; }
+int backend_debug_silent(void) { return 0; }
 #endif
 
 
@@ -559,14 +559,14 @@ inline int backend_debug_silent(void) { return 0; }
 /*
  * _mm_header: Get the header of given node by its footer and size
  */
-inline size_t* _mm_header(size_t* footer, size_t body_size) {
+size_t* _mm_header(size_t* footer, size_t body_size) {
 	return (size_t*) (((char*) footer) - body_size - SIZE_T_SIZE_PAD - SIZE_T_SIZE_PADDED);
 }
 
 /*
  * _mm_footer: Get the footer of given node by its header and size
  */
-inline size_t* _mm_footer(size_t* header, size_t body_size) {
+size_t* _mm_footer(size_t* header, size_t body_size) {
 	return (size_t*) (((char*) header) + SIZE_T_SIZE_PADDED + body_size + SIZE_T_SIZE_PAD);
 }
 
