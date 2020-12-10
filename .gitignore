@@ -1,4 +1,6 @@
 .idea/
 *.o
 proxy
+tiny/tiny
+tiny/cgi-bin/
 
