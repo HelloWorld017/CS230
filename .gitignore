@@ -3,4 +3,6 @@
 proxy
 tiny/tiny
 tiny/cgi-bin/
+.noproxy/
+.proxy/
 
