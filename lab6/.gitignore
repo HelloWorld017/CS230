@@ -1,0 +1,13 @@
+.idea/
+*.o
+*.out
+*.exe
+backend_test
+mm_test
+mm_prof
+mdriver
+callgrind.out.*
+*.gcov
+*.gcda
+*.gcno
+
