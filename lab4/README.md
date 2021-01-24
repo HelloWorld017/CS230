@@ -38,7 +38,7 @@ handout.
 61 20 6b 6f 6e 6f 69 62 61 73
 68 6f 00 00 00 00 00 00 00 00
 ce 18 40 00 00 00 00 00
-``
+```
 
 ## Commands
 * `run -q < ctarget1_raw.txt`	-> Run in quiet mode with given text
